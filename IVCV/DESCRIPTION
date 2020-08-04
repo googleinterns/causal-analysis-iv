@@ -1,0 +1,21 @@
+Package: IVCV
+Title: Linear instrumental variable regression with cross validation.
+Version: 0.0.0.9000
+Authors@R: 
+    person(given = "Feng",
+           family = "Ji",
+           role = c("aut", "cre"),
+           email = "first.last@example.com",
+           comment = c(ORCID = "YOUR-ORCID-ID"))
+Description: This package implements a methodology that is proposed by ().
+License: `use_mit_license()`, `use_gpl3_license()` or friends to
+    pick a license
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.1.1
+Suggests: 
+    testthat,
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr
