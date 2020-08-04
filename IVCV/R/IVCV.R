@@ -8,16 +8,14 @@
 #'
 #'
 #'
-library(nlme)
 library(tidyverse)
 library(MASS)
-
 select <- dplyr::select
-library(car)
+
 IVCV <- function(dat = data, I = 800, J = 100, n_cv = 2, ctrl_id = 1){
   dat_ctrl <- dat %>% filter(id == ctrl_id) %>% pull(X)
+  nrow_X = ncol(dat$X)
 
-  nrow_X = 3
   # X_cvid_var
   dat_cv <- dat %>%
     make_cv(group_id = id, n_cv = 2) %>%
