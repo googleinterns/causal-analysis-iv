@@ -1,0 +1,25 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1597171577157.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "7A567E5A",
+    "lastKnownWriteTime" : 1597186124,
+    "last_content_update" : 1597186124146,
+    "path" : "~/gIVCV/tests/testthat/test-sim_IV.R",
+    "project_path" : "tests/testthat/test-sim_IV.R",
+    "properties" : {
+        "cursorPosition" : "10,22",
+        "scrollLine" : "0"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 13,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}

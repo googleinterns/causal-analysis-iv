@@ -1,0 +1,26 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1597161252549.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "3112820305",
+    "id" : "68C0BF7F",
+    "lastKnownWriteTime" : 1597161259,
+    "last_content_update" : 1597161259940,
+    "path" : "~/gIVCV/R/rep_col.R",
+    "project_path" : "R/rep_col.R",
+    "properties" : {
+        "cursorPosition" : "5,12",
+        "scrollLine" : "0",
+        "tempName" : "Untitled1"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 9,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}
