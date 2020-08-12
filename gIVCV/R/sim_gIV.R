@@ -1,3 +1,25 @@
+#' @title Simulating data for IV with multitple experiments.
+#' @param mu_Z expectation for the true effects.
+#' @param beta_ctrl true effect of the experiment arm.
+#' @param summary_data return a data, averaged across experiments and arms.
+#' @param mu_U expectation of the multidimensional confounders.
+#' @param sig_U covariance matrix of the multidimensional confounders.
+#' @param beta_X true effects of the causal variables of intrest.
+#' @param beta_UX regression coefficients of the confounders on the causal variables of interest.
+#' @param beta_UY regression coefficients of the confounders on the outcome variable.
+#' @param mu_e_X expectation of the first stage errors - within group errors.
+#' @param sig_e_X covariance matrix of the first stage errors - within group errors.
+#' @param mu_e_Y expectation of the second stage errors - between group errors.
+#' @param sig_e_Y variance of the second stage errors - between group errors.
+#' @param I size of each experiment arm.
+#' @param J number of experiments.
+#' @examples
+#' # true effect is .1, .2, .3
+#' J = 2000
+#' I = 100
+#' sim_gIV(beta_ctrl = .3,
+#'         beta_X = c(.1, .1, .1),
+#'         J = J, I = I)
 sim_gIV <- function(mu_Z = c(0, 0, 0),
                     beta_ctrl = .2,
                     summary_data = T,
@@ -9,8 +31,8 @@ sim_gIV <- function(mu_Z = c(0, 0, 0),
                     beta_UY = c(1, 2, 3),
                     mu_e_X = c(0, 0, 0),
                     sig_e_X = matrix(c(1, .5, .5, .5, 1, .5, .5, .5, 1), nrow = 3),
-                    mu_e_Y = c(0, 0, 0),
-                    sig_e_Y = matrix(c(1, .5, .5, .5, 1, .5, .5, .5, 1), nrow = 3),
+                    mu_e_Y = 0,
+                    sig_e_Y = 1,
                     J = 50,
                     I = 30){
   Z <- mvrnorm(n = J, mu = mu_Z, Sigma = sig_Z)
@@ -23,7 +45,7 @@ sim_gIV <- function(mu_Z = c(0, 0, 0),
       id = 1:n() %>% as.factor(),
       Z_vec = map(id, ~ Z[.x, ] %>% rep_row(times = I)),
       e_X = map(id, ~ mvrnorm(I, mu_e_X, Sigma = sig_e_X)),
-      e_Y = map(id, ~ rnorm(I)),
+      e_Y = map(id, ~ rnorm(I, mean = mu_e_Y, sd = sqrt(sig_e_Y))),
       U = map(id, ~ mvrnorm(I, mu_U, sig_U))
     ) %>%
     mutate(X = pmap(list(Z_vec, U, e_X),

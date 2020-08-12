@@ -1,0 +1,2 @@
+# Causal Analysis with Instrumental Variables
+This package implements an approach to estimating the causal effects between multiple variables by using experiment groups from A/B experiments as instrumental variables.

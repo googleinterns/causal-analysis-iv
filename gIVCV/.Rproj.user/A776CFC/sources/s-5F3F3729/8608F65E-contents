@@ -1,3 +1,8 @@
+#' @title Shiny app for the data generating process of random intercept models.
+#'
+#' @return return a new Shinyapp session.
+#' @example
+#' demo_RE()
 library(shiny)
 library(lme4)
 library(tidyverse)

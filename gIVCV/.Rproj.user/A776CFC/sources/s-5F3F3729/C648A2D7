@@ -5,15 +5,15 @@
     "dirty" : false,
     "encoding" : "UTF-8",
     "folds" : "",
-    "hash" : "3939784613",
+    "hash" : "2891331114",
     "id" : "C648A2D7",
-    "lastKnownWriteTime" : 1597216391,
-    "last_content_update" : 1597216391564,
+    "lastKnownWriteTime" : 1597252654,
+    "last_content_update" : 1597252654051,
     "path" : "~/gIVCV/R/gIVCVs.R",
     "project_path" : "R/gIVCVs.R",
     "properties" : {
-        "cursorPosition" : "195,0",
-        "scrollLine" : "185"
+        "cursorPosition" : "16,0",
+        "scrollLine" : "15"
     },
     "read_only" : false,
     "read_only_alternatives" : [

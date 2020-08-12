@@ -1,25 +1,25 @@
 {
     "collab_server" : "",
     "contents" : "",
-    "created" : 1597160882601.000,
+    "created" : 1597251276983.000,
     "dirty" : false,
     "encoding" : "UTF-8",
     "folds" : "",
     "hash" : "0",
-    "id" : "BDCEA50B",
-    "lastKnownWriteTime" : 1597250150,
-    "last_content_update" : 1597250150484,
-    "path" : "~/gIVCV/R/cond_dis.R",
-    "project_path" : "R/cond_dis.R",
+    "id" : "AFC3E02F",
+    "lastKnownWriteTime" : 1597251458,
+    "last_content_update" : 1597251458771,
+    "path" : "~/gIVCV/R/threshold.R",
+    "project_path" : "R/threshold.R",
     "properties" : {
-        "cursorPosition" : "12,0",
+        "cursorPosition" : "4,18",
         "scrollLine" : "0",
         "tempName" : "Untitled1"
     },
     "read_only" : false,
     "read_only_alternatives" : [
     ],
-    "relative_order" : 1,
+    "relative_order" : 19,
     "source_on_save" : false,
     "source_window" : "",
     "type" : "r_source"

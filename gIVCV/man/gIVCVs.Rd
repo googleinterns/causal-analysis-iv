@@ -32,6 +32,12 @@ gIVCVs(
 \item{ctrl_sd_y}{estimated standard error for the group-level means for the dependent variables.}
 
 \item{data}{data frame with all the variables in the model specified in formula.}
+
+\item{wt}{for the second stage regression.}
+
+\item{L0}{a logic statement whether to apply the L0 regularization and cross validation or not.
+#' @param formula representing relations among variables, following the syntax used in `lm`.
+`y ~ x | z` means the first stage OLS is `x ~ z` and the second stage is `y ~ x`.}
 }
 \value{
 a list that contains the final tuning parameter, the data set after L0 regularization and a lm fitted object.
@@ -56,4 +62,8 @@ gIVCVs(y ~ x1 + x2 + x3,
      ctrl_sd_y = rep(sqrt(3/J), J),
      L0 = T,
      data = data_gIVCVs)$fit
+}
+\references{
+Peysakhovich, A., & Eckles, D., Learning causal effects from many randomized experiments
+using regularized instrumental variables.
 }

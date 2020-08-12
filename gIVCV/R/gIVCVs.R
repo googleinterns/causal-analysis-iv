@@ -7,6 +7,12 @@
 #' @param ctrl_sd_y estimated standard error for the group-level means for the dependent variables.
 #' @param data data frame with all the variables in the model specified in formula.
 #' @param L0 a logic statement whether to apply the L0 regularization and cross validation or not.
+#' #' @param formula representing relations among variables, following the syntax used in `lm`.
+#' `y ~ x | z` means the first stage OLS is `x ~ z` and the second stage is `y ~ x`.
+#' @param wt for the second stage regression.
+#' @references
+#' Peysakhovich, A., & Eckles, D., Learning causal effects from many randomized experiments
+#' using regularized instrumental variables.
 #' @return a list that contains the final tuning parameter, the data set after L0 regularization and a lm fitted object.
 #' @examples
 #' # true effect is .1, .2, .3

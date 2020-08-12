@@ -5,14 +5,14 @@
     "dirty" : false,
     "encoding" : "UTF-8",
     "folds" : "",
-    "hash" : "2257032802",
+    "hash" : "2555256226",
     "id" : "8608F65E",
-    "lastKnownWriteTime" : 1597160972,
-    "last_content_update" : 1597160972587,
+    "lastKnownWriteTime" : 1597250239,
+    "last_content_update" : 1597250239245,
     "path" : "~/gIVCV/R/demo_RE.R",
     "project_path" : "R/demo_RE.R",
     "properties" : {
-        "cursorPosition" : "7,19",
+        "cursorPosition" : "0,54",
         "scrollLine" : "0",
         "tempName" : "Untitled1"
     },

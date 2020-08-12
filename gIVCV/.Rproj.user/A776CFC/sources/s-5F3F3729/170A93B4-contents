@@ -1,17 +1,48 @@
 #' @title Instrumental variable with cross validation
 #'
-#' @description
-#' @param agree Testing if the package works well.
+#' @param id experiment id.
 #' @keywords instrumental variable
-#' @export
+#' @references
+#' Peysakhovich, A., & Eckles, D., Learning causal effects from many randomized experiments
+#' using regularized instrumental variables.
+#' \emph{Proceedings of the 2018 World Wide Web Conference} (2018, April). URL
+#' https://dl.acm.org/doi/10.1145/3178876.3186151'
+#' @param formula representing relations among variables, following the syntax used in `lm`.
+#' `y ~ x | z` means the first stage OLS is `x ~ z` and the second stage is `y ~ x`.
+#' @param id experiment id.
+#' @param ctrl_id indicators for the control arm.
+#' @param instruments model for the first stage OLS, omitted when use `|` syntax in formula.
+#' @param raw if run TSLS with the raw data
+#' @param L0 a logic statement whether to apply the L0 regularization and cross validation or not.
+#' @wt weights for the second stage regression.
+#' @return a list that contains the final tuning parameter, the data set after L0 regularization and a lm fitted object.
 #' @examples
+#' # true effect: .1 .2 .3
+#' I = 100
+#' J = 500
 #'
-#'
-#'
-library(tidyverse)
-library(MASS)
-select <- dplyr::select
+#' dat_raw <- sim_IV(I = I, # experiment size
+#'                   J = J, # number of experiment
+#'                   beta_X = c(.1, .2, .3), # effects
+#'                   ctrl_id = 1) # the indicator of treatment group
 
+
+#' head(dat_raw)
+
+#' # TSLS
+#' fit_raw_tsls <- IVCV(y ~ x1 + x2 + x3 | factor(id),
+#'                     id = id,
+#'                     data = dat_raw,
+#'                     L0 = F)$fit
+
+#' # IVCV
+#' fit_raw_ivcv <- IVCV(y ~ x1 + x2 + x3 | factor(id),
+#'                     id = id,
+#'                     ctrl_id = 1,
+#'                     data = dat_raw,
+#'                     L0 = T)$fit
+#'
+#'
 IVCV <-
   function(formula,
            id,
