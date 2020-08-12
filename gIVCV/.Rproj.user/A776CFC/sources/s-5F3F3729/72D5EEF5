@@ -1,0 +1,25 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1597171147387.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "1155357892",
+    "id" : "72D5EEF5",
+    "lastKnownWriteTime" : 1597213435,
+    "last_content_update" : 1597213435666,
+    "path" : "~/gIVCV/tests/testthat/test-IVCV.R",
+    "project_path" : "tests/testthat/test-IVCV.R",
+    "properties" : {
+        "cursorPosition" : "13,0",
+        "scrollLine" : "9"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 4,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}

@@ -1,0 +1,26 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1597161328460.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "580625E3",
+    "lastKnownWriteTime" : 1597213474,
+    "last_content_update" : 1597213474113,
+    "path" : "~/gIVCV/R/sIVCV.R",
+    "project_path" : "R/sIVCV.R",
+    "properties" : {
+        "cursorPosition" : "104,6",
+        "scrollLine" : "17",
+        "tempName" : "Untitled1"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 5,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}

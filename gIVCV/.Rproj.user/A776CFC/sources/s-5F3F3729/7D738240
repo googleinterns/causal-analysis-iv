@@ -1,0 +1,26 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1597161647813.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "7D738240",
+    "lastKnownWriteTime" : 1597171840,
+    "last_content_update" : 1597171840401,
+    "path" : "~/gIVCV/R/sim_IV.R",
+    "project_path" : "R/sim_IV.R",
+    "properties" : {
+        "cursorPosition" : "20,0",
+        "scrollLine" : "7",
+        "tempName" : "Untitled1"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 12,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}
