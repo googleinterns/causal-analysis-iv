@@ -7,13 +7,13 @@
     "folds" : "",
     "hash" : "0",
     "id" : "22447EA6",
-    "lastKnownWriteTime" : 1597161316,
-    "last_content_update" : 1597161316787,
+    "lastKnownWriteTime" : 1597252409,
+    "last_content_update" : 1597252409384,
     "path" : "~/gIVCV/R/sim_gIV.R",
     "project_path" : "R/sim_gIV.R",
     "properties" : {
-        "cursorPosition" : "2,32",
-        "scrollLine" : "0",
+        "cursorPosition" : "7,47",
+        "scrollLine" : "3",
         "tempName" : "Untitled1"
     },
     "read_only" : false,
