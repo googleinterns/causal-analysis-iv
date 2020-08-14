@@ -1,4 +1,4 @@
-#' @title Shiny app for the data generating process of random intercept models.
+#' @title Shiny app for comparing FE and RE.
 #'
 #' @return return a new Shinyapp session.
 #' @example
@@ -9,16 +9,18 @@ library(tidyverse)
 library(dplyr)
 library(knitr)
 library(tidyr)
+library(plm)
+library(MASS)
 library(broom.mixed)
 library(kableExtra)
 library(sjstats) # for icc
 select <- dplyr::select
-demo_RE <- function() {
+demo_RE_FE <- function() {
   # UI end ----
   ui <- fluidPage(pageWithSidebar(
     headerPanel(
-      windowTitle = "Random Intercept Models (One-way Error Component Model)",
-      div("Random Intercept Models (One-way Error Component Model)")
+      windowTitle = "FE vs RE",
+      div("FE vs RE")
     ),
 
     sidebarPanel(
@@ -28,7 +30,7 @@ demo_RE <- function() {
         br(),
         sliderInput(
           "n",
-          "Cluster size",
+          "Experiment size",
           min = 2,
           max = 100,
           step = 2,
@@ -37,7 +39,7 @@ demo_RE <- function() {
         ),
         sliderInput(
           "k",
-          "Number of cluster",
+          "Number of experiment",
           min = 6,
           max = 100,
           step = 2,
@@ -72,12 +74,30 @@ demo_RE <- function() {
           ticks = FALSE
         ),
         sliderInput(
+          "var_X",
+          "Covariate variance (\\(\\psi_X\\))",
+          min = 0,
+          max = 5,
+          step = .05,
+          value = 1,
+          ticks = FALSE
+        ),
+        sliderInput(
           "var_e",
           "Error variance (\\(\\theta\\))",
           min = 0,
           max = 5,
           step = .05,
           value = 1,
+          ticks = FALSE
+        ),
+        sliderInput(
+          "cor_rx",
+          "Correlation between X and the random intercept (\\(\\rho\\))",
+          min = -1,
+          max = 1,
+          step = .05,
+          value = 0,
           ticks = FALSE
         ),
         br(),
@@ -94,7 +114,8 @@ demo_RE <- function() {
         class = "span6",
         uiOutput('table'),
         uiOutput('ex2')
-      ))
+      )
+      )
 
   ))
 
@@ -109,35 +130,36 @@ demo_RE <- function() {
 
       b0 <- input$b0
       b1 <- input$b1
-
+      var_X <- input$var_X
       var_ri <- input$var_ri
       var_e <- input$var_e
+      cor_rx <- input$cor_rx
+
+
       sd_ri <- sqrt(as.numeric(var_ri))
       sd_e <- sqrt(as.numeric(var_e))
+      sd_X <- sqrt(as.numeric(var_X))
 
-      # random intercept
-      ri <- rnorm(k, sd = sd_ri)
+      ri_x_g <- MASS::mvrnorm(n = k, c(0, 0), Sigma = matrix(c(1, cor_rx, cor_rx, 1), nrow = 2))
 
-      icc = var_ri / (var_e + var_ri)
-      dat <- tibble(ri) %>%
-        mutate(
-          id = 1:n() %>% as.factor(),
-          e = map(id, ~ rnorm(n = n, sd = sd_e)),
-          x = map(id, ~ runif(n = n,-2, 6))
-        ) %>%
+      dat <- data.frame(ri = sd_ri*ri_x_g[, 1], x_true_mean = sd_X*ri_x_g[, 2]) %>%
+        mutate(id = 1:n() %>% as.factor(),
+               e = map(id, ~rnorm(n, sd = sd_e)),
+               x_true_demean = map(id, ~ rnorm(n, sd = sd_X))) %>%
+        mutate(x = pmap(list(x_true_mean, x_true_demean), ~..1 + ..2)) %>%
         mutate(y = pmap(list(ri, x, e),
-                        ~ ..1+b0 + b1 * ..2+..3)) %>%
-        unchop(c(e, y, x))
+                        ~b0 + ..1 + b1*..2 + ..3)) %>%
+        unchop(c(e, y, x)) %>% group_by(id) %>% mutate(x_mean = mean(x), x_demean = x - x_mean) %>% ungroup()
 
 
       return(list(
         dat = dat,
-        icc = icc,
         b0 = b0,
         b1 = b1,
-        ri = ri,
+        ri = dat$ri,
         sd_ri = sd_ri,
-        sd_e = sd_e
+        sd_e = sd_e,
+        sd_X = sd_X
       ))
 
     })
@@ -147,59 +169,21 @@ demo_RE <- function() {
     vcm_fit <- reactive({
       # Get the current model structure
       dat <- rand_sample()$dat
-      icc <- rand_sample()$icc
-      lmer_fit <- lmer(y ~ x + (1 | id), dat)
-      icc_est <- icc(lmer_fit)
-      lmer_fit_tidy <- tidy(lmer_fit)
-
-      tidy_out <-
-        tidy(lmer_fit) %>%
-        add_column(
-          `generating parameter` = c(
-            rand_sample()$b0,
-            rand_sample()$b1,
-            rand_sample()$sd_ri ^ 2,
-            rand_sample()$sd_e ^ 2
-          ),
-          .before = "estimate"
-        ) %>% mutate(
-          estimate = c(
-            lmer_fit_tidy$estimate[1],
-            lmer_fit_tidy$estimate[2],
-            lmer_fit_tidy$estimate[3] ^ 2,
-            lmer_fit_tidy$estimate[4] ^ 2
-          )
-        ) %>%
-        select(-group,-effect,-term) %>% add_row(`generating parameter` = icc,
-                                                 estimate = icc_est$ICC_adjusted) %>%
-        mutate(
-          description = c(
-            "fixed intercept",
-            "fixed coef for X" ,
-            "random intercept variance",
-            "error variance",
-            "intraclass correlation"
-          ) ,
-          .before = `generating parameter`
-        ) %>%
-        as.data.frame()
-
-      rownames(tidy_out) <- c("β1", "β2", "ψ", "θ", "ICC")
-      tidy_out <- tidy_out %>%
-        kable(format = "html",
-              row.names = T,
-              escape = FALSE)
+      fit_ols <- lm(y ~ x, dat)
+      fit_w <- plm::plm(formula = y ~ x, data = dat, model = "within", index = "id")
+      fit_b <- plm::plm(formula = y ~ x, data = dat, model = "between", index = "id")
+      omega_b <-  diag(fit_b$vcov)[2]/(diag(fit_b$vcov)[2] + fit_w$vcov)
+      fit_w$coefficients*omega_b  + (1 - omega_b)*fit_b$coefficients[2]
+      fit_re <- plm(y ~ x, data=dat, model="random", index=c("id"))
+      tb <- tribble(~estimator, ~effect, ~se,
+                  "ols", as.double(fit_ols$coefficients[2]), as.double(sqrt(diag(vcov(fit))[2])),
+                  "between", as.double(fit_b$coefficients[2]), as.double(sqrt(diag(fit_b$vcov)[2])),
+                  "within(FE)", as.double(fit_w$coefficients), as.double(sqrt(fit_w$vcov)),
+                  "RE", as.double(fit_re$coefficients[2]), as.double(sqrt(diag(fit_re$vcov)[2]))
+                    ) %>% as.data.frame() %>% kable(format = "html")
 
 
-      # Get the model summary
-      if (is.null(lmer_fit)) {
-        fit_sum <- NULL
-      } else {
-        fit_sum <- summary(lmer_fit)
-      }
-
-      return(list(lmer_fit = lmer_fit,
-                  tidy_out = tidy_out))
+      return(list(tb = tb))
 
     })
 
@@ -208,29 +192,31 @@ demo_RE <- function() {
       b0 = rand_sample()$b0
       b1 = rand_sample()$b1
       ri = rand_sample()$ri
-
-      ri_make <- function(ri, b0, b1) {
-        function(x) {
-          ri + b0 + b1 * x
-        }
-      }
-      funcs <- tibble(ri, b0, b1) %>%
-        mutate(fun_list = pmap(list(ri, b0, b1),
-                               ~ ri_make(..1, ..2, ..3))) %>% pull(fun_list)
-
-      p <-
-        ggplot(aes(y = y, x = x, color = id), data = dat) + geom_point() + xlim(-2, 6)
-
-      g <- ggplot_build(p)
-      g_colour <- unique(g$data[[1]]["colour"])
-      for (i in 1:length(funcs))
-        p <- p + stat_function(fun = funcs[[i]], colour = g_colour[i,])
-      print(p)
+# population RI
+#       ri_make <- function(ri, b0, b1) {
+#         function(x) {
+#           ri + b0 + b1 * x
+#         }
+#       }
+#       funcs <- tibble(ri, b0, b1) %>%
+#         mutate(fun_list = pmap(list(ri, b0, b1),
+#                                ~ ri_make(..1, ..2, ..3))) %>% pull(fun_list)
+#
+#       p <-
+#         ggplot(aes(y = y, x = x, color = id), data = dat) + geom_point() + xlim(-2, 6)
+#
+#       g <- ggplot_build(p)
+#       g_colour <- unique(g$data[[1]]["colour"])
+#       for (i in 1:length(funcs))
+#         p <- p + stat_function(fun = funcs[[i]], colour = g_colour[i,])
+#       print(p)
+      ggplot(dat,aes(y = y, x = x, colour = id)) +
+        geom_point() + geom_smooth(method = "lm", fill = NA)
     })
 
 
     output$table <- reactive({
-      vcm_fit()$tidy_out %>%
+      vcm_fit()$tb %>%
         kable_styling(
           font_size = 15,
           bootstrap_options = c("striped", "hover", "condensed"),
@@ -245,8 +231,7 @@ demo_RE <- function() {
         ),
         helpText(
           ' $$\\text {where }\\zeta_{j}\\left|x_{i j} \\sim N(0, \\psi), \\quad \\epsilon_{i j}\\right| x_{i j}, \\zeta_{j} \\sim N(0, \\theta)$$'
-        ),
-        helpText(' $$\\text {ICC}\\equiv \\frac{\\psi}{\\psi+\\theta} $$')
+        )
       )
     })
 
@@ -254,3 +239,4 @@ demo_RE <- function() {
   }
   shinyApp(ui, server)
 }
+demo_RE_FE()
