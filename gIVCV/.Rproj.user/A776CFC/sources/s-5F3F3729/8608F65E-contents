@@ -12,6 +12,7 @@ library(tidyr)
 library(broom.mixed)
 library(kableExtra)
 library(sjstats) # for icc
+select <- dplyr::select
 demo_RE <- function() {
   # UI end ----
   ui <- fluidPage(pageWithSidebar(

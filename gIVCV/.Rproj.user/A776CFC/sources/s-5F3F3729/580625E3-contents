@@ -4,8 +4,8 @@
 #' @references
 #' Peysakhovich, A., & Eckles, D., Learning causal effects from many randomized experiments
 #' using regularized instrumental variables.
-#' \emph{Proceedings of the 2018 World Wide Web Conference} (2018, April). URL
-#' https://dl.acm.org/doi/10.1145/3178876.3186151'
+#' \emph{Proceedings of the 2018 World Wide Web Conference} (2018, April).
+#' URL https://dl.acm.org/doi/10.1145/3178876.3186151
 #' @param formula representing relations among variables, following the syntax used in `lm`.
 #' `y ~ x | z` means the first stage OLS is `x ~ z` and the second stage is `y ~ x`.
 #' @param id experiment id.
