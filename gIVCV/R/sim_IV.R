@@ -1,5 +1,5 @@
 #' @title Simulating data for IV with multitple experiment arms and one control arm
-#' @ctrl_id indicator for the control arm.
+#' @param ctrl_id indicator for the control arm.
 #' @param mu_Z expectation for the true effects.
 #' @param beta_ctrl true effect of the experiment arm.
 #' @param summary_data return a data, averaged across experiments and arms.
@@ -14,6 +14,9 @@
 #' @param sig_e_Y variance of the second stage errors - between group errors.
 #' @param I size of each experiment arm.
 #' @param J number of experiments.
+#' @note Currently only support generate balanced panel.
+#' @import MASS dplyr purrr Formula tidyr
+
 #' # true effect: .1 .2 .3
 #' I = 100
 #' J = 500
@@ -36,26 +39,27 @@ sim_IV <-
            J = 50,
            I = 30,
            ctrl_id = 1) {
-    Z <- mvrnorm(n = J, mu = mu_Z, Sigma = sig_Z)
+    Z <- MASS::mvrnorm(n = J, mu = mu_Z, Sigma = sig_Z)
     Z[ctrl_id, ] <- 0
     dim_X <- length(mu_e_X)
     data <-
-      tibble(Z) %>%
-      mutate(
+      dplyr::tibble(Z) %>%
+      dplyr::mutate(
         id = 1:n() %>% as.factor(),
-        Z_vec = map(id, ~ Z[.x, ] %>% rep_row(times = I)),
-        e_X = map(id, ~ mvrnorm(I, mu_e_X, Sigma = sig_e_X)),
-        e_Y = map(id, ~ rnorm(I)),
-        U = map(id, ~ mvrnorm(I, mu_U, sig_U))
+        Z_vec = purrr::map(id, ~ Z[.x, ] %>% rep_row(times = I)),
+        e_X = purrr::map(id, ~ MASS::mvrnorm(I, mu_e_X, Sigma = sig_e_X)),
+        e_Y = purrr::map(id, ~ rnorm(I)),
+        U = purrr::map(id, ~ MASS::mvrnorm(I, mu_U, sig_U))
       ) %>%
-      mutate(X = pmap(list(Z_vec, U, e_X),
-                      ~ ..1+..2 %*% beta_UX + ..3)) %>%
-      mutate(Y = pmap(list(X, U, e_Y),
-                      ~ ..1 %*% beta_X + ..2 %*% beta_UY + ..3)) %>%
-      unchop(c(X, Y, U))
+      mutate(X = purrr::pmap(list(Z_vec, U, e_X),
+                             ~ ..1+..2 %*% beta_UX + ..3)) %>%
+      mutate(Y = purrr::pmap(list(X, U, e_Y),
+                             ~ ..1 %*% beta_X + ..2 %*% beta_UY + ..3)) %>%
+      tidyr::unchop(c(X, Y, U))
     colnames(data$Y)  <- "y"
     colnames(data$X)  <- paste0("x", 1:dim_X)
     colnames(data$Z)  <- paste0("z", 1:dim_X)
     data <- data.frame(id = data$id, data$X, data$Y, data$Z)
+
     return(data)
   }

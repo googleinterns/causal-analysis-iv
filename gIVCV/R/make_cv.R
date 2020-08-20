@@ -4,9 +4,7 @@
 #' @param group_id experiment id.
 #' @param group_id number of cv splits.
 #' @return a tibble with id numbers for cv splits.
-#' @examples
-#' tibble(a =1:10, exp_id = rep(1:5, 2)) %>%
-#' make_cv(group_id = exp_id, 2)
+#' @import magrittr
 make_cv <- function(data, group_id, n_cv = 2) {
   data %>%
     group_by({{ group_id }}) %>%

@@ -3,15 +3,7 @@
 #' @return return a new Shinyapp session.
 #' @example
 #' demo_RE()
-library(shiny)
-library(lme4)
-library(tidyverse)
-library(dplyr)
-library(knitr)
-library(tidyr)
-library(broom.mixed)
-library(kableExtra)
-library(sjstats) # for icc
+#' @importFrom shiny lme4 dplyr knitr tidyr broom.mixed kableExtra sjstats
 select <- dplyr::select
 demo_RE <- function() {
   # UI end ----
@@ -86,15 +78,14 @@ demo_RE <- function() {
       )
     ),
 
-    mainPanel(
-      div(
-        plotOutput("reg_plot", width = 600, height = 480)
-      ),
-      div(
-        class = "span6",
-        uiOutput('table'),
-        uiOutput('ex2')
-      ))
+    mainPanel(div(
+      plotOutput("reg_plot", width = 600, height = 480)
+    ),
+    div(
+      class = "span6",
+      uiOutput('table'),
+      uiOutput('ex2')
+    ))
 
   ))
 
@@ -123,7 +114,7 @@ demo_RE <- function() {
         mutate(
           id = 1:n() %>% as.factor(),
           e = map(id, ~ rnorm(n = n, sd = sd_e)),
-          x = map(id, ~ runif(n = n,-2, 6))
+          x = map(id, ~ runif(n = n, -2, 6))
         ) %>%
         mutate(y = pmap(list(ri, x, e),
                         ~ ..1+b0 + b1 * ..2+..3)) %>%
@@ -170,8 +161,8 @@ demo_RE <- function() {
             lmer_fit_tidy$estimate[4] ^ 2
           )
         ) %>%
-        select(-group,-effect,-term) %>% add_row(`generating parameter` = icc,
-                                                 estimate = icc_est$ICC_adjusted) %>%
+        select(-group, -effect, -term) %>% add_row(`generating parameter` = icc,
+                                                   estimate = icc_est$ICC_adjusted) %>%
         mutate(
           description = c(
             "fixed intercept",
@@ -224,9 +215,11 @@ demo_RE <- function() {
       g <- ggplot_build(p)
       g_colour <- unique(g$data[[1]]["colour"])
       for (i in 1:length(funcs))
-        p <- p + stat_function(fun = funcs[[i]], colour = g_colour[i,])
+        p <-
+        p + stat_function(fun = funcs[[i]], colour = g_colour[i, ])
       print(p)
     })
+
 
 
     output$table <- reactive({

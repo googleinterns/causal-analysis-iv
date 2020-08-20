@@ -17,11 +17,13 @@ gIVCVs(
   instruments = NULL,
   na.action = NULL,
   L0 = F,
+  theta = t(c(1, 1)),
   ...
 )
 }
 \arguments{
-\item{formula}{representing relations among variables, following the syntax used in `lm`.}
+\item{formula}{representing relations among variables, following the syntax used in `lm`.
+`r y ~ x | z` means the first stage OLS is `r x ~ z` and the second stage is `y ~ x`.}
 
 \item{id}{experiment id.}
 
@@ -35,9 +37,7 @@ gIVCVs(
 
 \item{wt}{for the second stage regression.}
 
-\item{L0}{a logic statement whether to apply the L0 regularization and cross validation or not.
-#' @param formula representing relations among variables, following the syntax used in `lm`.
-`y ~ x | z` means the first stage OLS is `x ~ z` and the second stage is `y ~ x`.}
+\item{L0}{a logic statement whether to apply the L0 regularization and cross validation or not.}
 }
 \value{
 a list that contains the final tuning parameter, the data set after L0 regularization and a lm fitted object.
@@ -53,6 +53,7 @@ data_gIVCVs <- sim_gIV(beta_ctrl = .3,
                       beta_X = c(.1, .1, .1),
                       J = J, I = I)
 data_gIVCVs \%>\% head()
+# generalized IVCV with L0
 gIVCVs(y ~ x1 + x2 + x3,
       id = id,
       ctrl_id = ctrl_id,
@@ -65,5 +66,6 @@ gIVCVs(y ~ x1 + x2 + x3,
 }
 \references{
 Peysakhovich, A., & Eckles, D., Learning causal effects from many randomized experiments
-using regularized instrumental variables.
+using regularized instrumental variables. \emph{Proceedings of the 2018 World Wide Web Conference} (2018, April).
+URL https://dl.acm.org/doi/10.1145/3178876.3186151
 }

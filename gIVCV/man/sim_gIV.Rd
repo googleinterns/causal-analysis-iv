@@ -54,6 +54,9 @@ sim_gIV(
 \description{
 Simulating data for IV with multitple experiments.
 }
+\note{
+Currently only support generate balanced panel.
+}
 \examples{
 # true effect is .1, .2, .3
 J = 2000

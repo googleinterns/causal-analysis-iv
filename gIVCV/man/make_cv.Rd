@@ -17,7 +17,3 @@ a tibble with id numbers for cv splits.
 \description{
 Make cv split indicators within tibble.
 }
-\examples{
-tibble(a =1:10, exp_id = rep(1:5, 2)) \%>\%
-make_cv(group_id = exp_id, 2)
-}

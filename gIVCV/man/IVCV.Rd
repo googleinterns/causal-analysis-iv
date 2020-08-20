@@ -25,6 +25,8 @@ IVCV(
 
 \item{id}{experiment id.}
 
+\item{wt}{weights for the second stage regression.}
+
 \item{ctrl_id}{indicators for the control arm.}
 
 \item{instruments}{model for the first stage OLS, omitted when use `|` syntax in formula.}
@@ -38,30 +40,6 @@ a list that contains the final tuning parameter, the data set after L0 regulariz
 }
 \description{
 Instrumental variable with cross validation
-}
-\examples{
-# true effect: .1 .2 .3
-I = 100
-J = 500
-
-dat_raw <- sim_IV(I = I, # experiment size
-                  J = J, # number of experiment
-                  beta_X = c(.1, .2, .3), # effects
-                  ctrl_id = 1) # the indicator of treatment group
-head(dat_raw)
-# TSLS
-fit_raw_tsls <- IVCV(y ~ x1 + x2 + x3 | factor(id),
-                    id = id,
-                    data = dat_raw,
-                    L0 = F)$fit
-# IVCV
-fit_raw_ivcv <- IVCV(y ~ x1 + x2 + x3 | factor(id),
-                    id = id,
-                    ctrl_id = 1,
-                    data = dat_raw,
-                    L0 = T)$fit
-
-
 }
 \references{
 Peysakhovich, A., & Eckles, D., Learning causal effects from many randomized experiments

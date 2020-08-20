@@ -1,4 +1,5 @@
 /Users/feji/IVCV/vignettes/my-vignette.Rmd="218A932B"
+/Users/feji/gIVCV/.Rbuildignore="5D3FED74"
 /Users/feji/gIVCV/R/IVCV.R="9AF7F044"
 /Users/feji/gIVCV/R/cond_dis.R="454A490C"
 /Users/feji/gIVCV/R/demo_RE.R="4B814075"
@@ -13,4 +14,7 @@
 /Users/feji/gIVCV/R/sim_IV.R="95ECA438"
 /Users/feji/gIVCV/R/sim_gIV.R="D97B038C"
 /Users/feji/gIVCV/R/threshold.R="AE1E3259"
+/Users/feji/gIVCV/README.Rmd="9EE8D833"
+/Users/feji/gIVCV/README.md="51CE5D33"
+/Users/feji/gIVCV/tests/testthat/test-IVCV.R="91AFAB0E"
 /Users/feji/gIVCV/vignettes/gIVCV.Rmd="7C7DC0E1"

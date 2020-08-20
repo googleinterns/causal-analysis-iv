@@ -15,7 +15,9 @@
 #' @param L0 a logic statement whether to apply the L0 regularization and cross validation or not.
 #' @param wt for the second stage regression.
 #' @return a list that contains the final tuning parameter, the data set after L0 regularization and a lm fitted object.
-#' @example
+#' @import purrr dplyr Formula magrittr tidyr tibble
+#' @examples
+
 #' # true effect: .1 .2 .3
 #' I = 100
 #' J = 500
@@ -71,22 +73,40 @@ sIVCV <-
            instruments = NULL,
            na.action = NULL,
            L0 = F,
-           ...){
+           theta = t(c(1, 1)),
+           ...) {
     # build model frame
     mf <- match.call(expand.dots = T)
-    id <- data %>% pull({{id}})
+    id <- data %>% pull({
+      {
+        id
+      }
+    })
 
 
     # of experiments
     J = length(unique(id))
 
     m <-
-      match(c("formula", "id", "data", "weights", "subset", "instruments" ,"na.action"),
-            names(mf), 0)
+      match(
+        c(
+          "formula",
+          "id",
+          "data",
+          "weights",
+          "subset",
+          "instruments" ,
+          "na.action"
+        ),
+        names(mf),
+        0
+      )
     mf <- mf[c(1, m)]
 
-    f <- if(!is.null(instruments)) as.Formula(formula, instruments)
-    else as.Formula(formula)
+    f <- if (!is.null(instruments))
+      Formula::as.Formula(formula, instruments)
+    else
+      Formula::as.Formula(formula)
     stopifnot(isTRUE(all.equal(length(f), c(1, 2))))
 
     mf[[1]] <- as.name("model.frame")
@@ -100,45 +120,81 @@ sIVCV <-
     w <- as.vector(model.weights(mf))
 
     x <- model.matrix(f, data = mf, rhs = 1) %>%
-      as_tibble() %>%
-      select(-`(Intercept)`)
+      dplyr::as_tibble() %>%
+      dplyr::select(-`(Intercept)`)
     z <- model.matrix(f, data = mf, rhs = 2) %>%
-      as_tibble() %>%
-      select(-`(Intercept)`)
-    dat <- tibble(id = id, Y = y, X = x, Z = z)
+      dplyr::as_tibble() %>%
+      dplyr::select(-`(Intercept)`)
+    dat <- dplyr::tibble(id = id,
+                         Y = y,
+                         X = x,
+                         Z = z)
 
     # xz <- as.matrix(lm.fit(z, x)$fitted.values)
     #  lm.fit(xz, y)$coefficients
-    if(L0 == T){
+    if (L0 == T) {
       dat_ctrl <- dat %>% filter(id == ctrl_id) %>% pull(X)
       dim_X = ncol(dat$X)
 
       dat_cv <- dat %>%
-        group_by(id) %>%
-        summarise(mean_X = map(list(X), ~colMeans(X)), mean_Y = mean(Y))
+        dplyr::group_by(id) %>%
+        dplyr::summarise(mean_X = purrr::map(list(X), ~ colMeans(X)),
+                         mean_Y = mean(Y))
 
 
       dat_cv <- dat_cv %>%
-        mutate(mean_Y_cv_cond = map(mean_Y, ~cond_dis(mu = rep(.x, 2), diag(rep(ctrl_sd_y^2, 2)), 2*.x, theta))) %>%
-        mutate(mean_Y_cv = map(mean_Y_cv_cond, ~mvrnorm(n = 1, mu = .x$mu_cond, Sigma = .x$sigma_cond))) %>%
-        mutate(mean_X = map(mean_X, ~unname(.x))) %>%
-        add_column(ctrl_sd_x = rep_row(ctrl_sd_x, J)) %>%
-        mutate(mean_X_cv_cond = map(mean_X, ~imap(., ~cond_dis(mu = rep(.x, 2), diag(rep(ctrl_sd_x[.y], 2)), 2*.x, theta)))) %>%
-        mutate(mean_X_cv = map_depth(mean_X_cv_cond,.depth = 2, ~mvrnorm(n = 1, mu = .x$mu_cond, Sigma = .x$sigma_cond))) %>%
-        mutate(mean_X_cv = map(mean_X_cv, ~rearrange(list = .x, n_list = 2, n_var = dim_X))) %>%
-        add_column(cv_id = list((c(1, 2)))) %>%
-        unnest(c(cv_id, mean_Y_cv, mean_X_cv)) %>%
-        mutate(mean_X_cv = map(mean_X_cv, ~unlist(.x))) %>%
-        pivot_wider(names_from = cv_id, values_from = c(mean_Y_cv, mean_X_cv)) %>%
-        unchop(c(mean_X_cv_1 , mean_X_cv_2)) %>%
-        add_column(var_id = rep(1:dim_X, J)) %>%
-        pivot_wider(names_from = var_id, values_from = c(mean_X_cv_1, mean_X_cv_2), names_glue = "{.value}_{var_id}")
+        dplyr::mutate(mean_Y_cv_cond = purrr::map(mean_Y, ~ cond_dis(mu = rep(.x, 2), diag(
+          rep(ctrl_sd_y ^ 2, 2)
+        ), 2 * .x, theta))) %>%
+        dplyr::mutate(mean_Y_cv = purrr::map(
+          mean_Y_cv_cond,
+          ~ MASS::mvrnorm(
+            n = 1,
+            mu = .x$mu_cond,
+            Sigma = .x$sigma_cond
+          )
+        )) %>%
+        dplyr::mutate(mean_X = purrr::map(mean_X, ~ unname(.x))) %>%
+        tibble::add_column(ctrl_sd_x = rep_row(ctrl_sd_x, J)) %>%
+        mutate(mean_X_cv_cond = purrr::map(mean_X, ~ purrr::imap(
+          ., ~ cond_dis(mu = rep(.x, 2), diag(rep(ctrl_sd_x[.y], 2)), 2 * .x, theta)
+        ))) %>%
+        dplyr::mutate(mean_X_cv = purrr::map_depth(
+          mean_X_cv_cond,
+          .depth = 2,
+          ~ MASS::mvrnorm(
+            n = 1,
+            mu = .x$mu_cond,
+            Sigma = .x$sigma_cond
+          )
+        )) %>%
+        dplyr::mutate(mean_X_cv = purrr::map(mean_X_cv, ~ rearrange(
+          list = .x,
+          n_list = 2,
+          n_var = dim_X
+        ))) %>%
+        tibble::add_column(cv_id = list((c(1, 2)))) %>%
+        tidyr::unnest(c(cv_id, mean_Y_cv, mean_X_cv)) %>%
+        dplyr::mutate(mean_X_cv = purrr::map(mean_X_cv, ~ unlist(.x))) %>%
+        tidyr::pivot_wider(names_from = cv_id,
+                           values_from = c(mean_Y_cv, mean_X_cv)) %>%
+        tidyr::unchop(c(mean_X_cv_1 , mean_X_cv_2)) %>%
+        tibble::add_column(var_id = rep(1:dim_X, J)) %>%
+        tidyr::pivot_wider(
+          names_from = var_id,
+          values_from = c(mean_X_cv_1, mean_X_cv_2),
+          names_glue = "{.value}_{var_id}"
+        )
 
 
-      mean_X_1 <- dat_cv %>% select(starts_with("mean_X_cv_1"))
-      mean_Y_1 <- dat_cv %>% select(starts_with("mean_Y_cv_1"))
-      mean_X_2 <- dat_cv %>% select(starts_with("mean_X_cv_2"))
-      mean_Y_2 <- dat_cv %>% select(starts_with("mean_Y_cv_2"))
+      mean_X_1 <-
+        dat_cv %>% dplyr::select(starts_with("mean_X_cv_1"))
+      mean_Y_1 <-
+        dat_cv %>% dplyr::select(starts_with("mean_Y_cv_1"))
+      mean_X_2 <-
+        dat_cv %>% dplyr::select(starts_with("mean_X_cv_2"))
+      mean_Y_2 <-
+        dat_cv %>% dplyr::select(starts_with("mean_Y_cv_2"))
 
 
       #sd_ctrl = sqrt(var(dat_ctrl)/(I/2)) %>% diag() %>% max()
@@ -147,63 +203,69 @@ sIVCV <-
 
       ctrl_X <- mean_X_1[ctrl_id, ] %>% rep_row(J)
       # sd_ctrl = .1
-      q_final <- tibble(
+      q_final <- dplyr::tibble(
         q,
         X_1 = list(as.matrix(mean_X_1)),
         X_2 = list(as.matrix(mean_X_2)),
         Y_1 = list(as.matrix(mean_Y_1)),
         Y_2 = list(as.matrix(mean_Y_2)),
         ctrl_X = list(as.matrix(ctrl_X))
-      ) %>% mutate(id = row_number(),
-                   X = pmap(list(X_1, ctrl_X, q),
-                            ~ threshold(X = ..1 - ..2,
-                                        q = ..3,
-                                        sd_ctrl = ctrl_sd_x,
-                                        X_return = ..1))) %>%
-        mutate(X_1_q = map(X, ~ as.matrix(.x))) %>%
-        mutate(fit = pmap(list(Y_1, X_1_q), ~ lm(..1 ~ ..2, weights = wt))) %>%
-        mutate(Y_hat = pmap(list(fit, X_1), ~ predict(..1, newdata = as.data.frame(..2)))) %>%
-        mutate(error = pmap_dbl(list(Y_2, Y_hat), ~ mean((..1-..2) ^ 2))) %>%
-        slice(which.min(error)) %>% pull(q)
+      ) %>% dplyr::mutate(id = row_number(),
+                          X = purrr::pmap(
+                            list(X_1, ctrl_X, q),
+                            ~ threshold(
+                              X = ..1-..2,
+                              q = ..3,
+                              sd_ctrl = ctrl_sd_x,
+                              X_return = ..1
+                            )
+                          )) %>%
+        dplyr::mutate(X_1_q = purrr::map(X, ~ as.matrix(.x))) %>%
+        dplyr::mutate(fit = purrr::pmap(list(Y_1, X_1_q), ~ lm(..1 ~ ..2, weights = wt))) %>%
+        dplyr::mutate(Y_hat = purrr::pmap(list(fit, X_1), ~ predict(..1, newdata = as.data.frame(..2)))) %>%
+        dplyr::mutate(error = purrr::pmap_dbl(list(Y_2, Y_hat), ~ mean((..1-..2) ^ 2))) %>%
+        dplyr::slice(which.min(error)) %>% pull(q)
       message(paste("Tuning parameter q selected:", q_final))
 
 
       dat_final <- dat %>%
-        group_by(id) %>%
-        summarise(mean_X = map(list(X), ~colMeans(X)), mean_Y = mean(Y)) %>%
-        mutate(ctrl_X = list(as.matrix(ctrl_X[ctrl_id, ]))) %>%
-        mutate(mean_X_q = pmap(list(mean_X, ctrl_X, q_final), ~threshold(X = ..1 - ..2,
-                                                                         q = ..3,
-                                                                         sd_ctrl = ctrl_sd_x,
-                                                                         X_return = ..1)))
+        dplyr::group_by(id) %>%
+        dplyr::summarise(mean_X = purrr::map(list(X), ~ colMeans(X)),
+                         mean_Y = mean(Y)) %>%
+        dplyr::mutate(ctrl_X = list(as.matrix(ctrl_X[ctrl_id, ]))) %>%
+        dplyr::mutate(mean_X_q = purrr::pmap(
+          list(mean_X, ctrl_X, q_final),
+          ~ threshold(
+            X = ..1-..2,
+            q = ..3,
+            sd_ctrl = ctrl_sd_x,
+            X_return = ..1
+          )
+        ))
 
       Y <-
         dat_final$mean_Y %>%
         as.matrix()  %>%
-        set_colnames(.,
-                     sub("^(\\w*)\\s~\\s.*$",
-                         "\\1",
-                         deparse(f)))
+        magrittr::set_colnames(.,
+                             sub("^(\\w*)\\s~\\s.*$",
+                                 "\\1",
+                                 deparse(f)))
 
       X <-
         do.call(rbind,
                 dat_final$mean_X_q) %>%
-        set_colnames(colnames(x)) %>%
+        magrittr::set_colnames(colnames(x)) %>%
         as.matrix()
       fit <- lm(Y ~ X, weights = wt, ...)
-      names(fit$coefficients)[-1]<- colnames(x)
-      return_obj <- list(
-        q_final = q_final,
-        fit = fit,
-        data = data
-      )
-    }else{
+      names(fit$coefficients)[-1] <- colnames(x)
+      return_obj <- list(q_final = q_final,
+                         fit = fit,
+                         data = data)
+    } else{
       xz <- as.matrix(lm.fit(as.matrix(z), as.matrix(x))$fitted.values)
       fit <- lm(y ~ xz)
-      names(fit$coefficients)[-1]<- colnames(x)
-      return_obj <- list(
-        fit = fit
-      )
+      names(fit$coefficients)[-1] <- colnames(x)
+      return_obj <- list(fit = fit)
     }
     return(return_obj)
 

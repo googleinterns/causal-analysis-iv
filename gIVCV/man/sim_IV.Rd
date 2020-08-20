@@ -42,16 +42,11 @@ sim_IV(
 
 \item{sig_e_Y}{variance of the second stage errors - between group errors.}
 
-\item{J}{number of experiments.
-# true effect: .1 .2 .3
-I = 100
-J = 500
-sim_IV(I = I,
-       J = J,
-       beta_X = c(.1, .2, .3),
-       ctrl_id = 1)}
+\item{J}{number of experiments.}
 
 \item{I}{size of each experiment arm.}
+
+\item{ctrl_id}{indicator for the control arm.}
 
 \item{beta_ctrl}{true effect of the experiment arm.}
 
@@ -59,4 +54,7 @@ sim_IV(I = I,
 }
 \description{
 Simulating data for IV with multitple experiment arms and one control arm
+}
+\note{
+Currently only support generate balanced panel.
 }

@@ -1,23 +1,33 @@
 ---
-title: "gIVCV"
-output: rmarkdown::html_vignette
-vignette: >
-  %\VignetteIndexEntry{gIVCV}
-  %\VignetteEngine{knitr::rmarkdown}
-  %\VignetteEncoding{UTF-8}
+output: github_document
 ---
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
 
 ```{r, include = FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
-  message = FALSE,
+  comment = "#>",
   warning = FALSE,
-  fig.align = "center",
-  comment = "#>"
+  fig.path = "man/figures/README-",
+  out.width = "100%"
 )
 ```
 
-```{r setup}
+# gIVCV
+
+<!-- badges: start -->
+<!-- badges: end -->
+
+The goal of gIVCV is to implement instrumental variable with cross validation for massive A/B test experiments.
+
+
+## Example
+
+This is a basic example which shows you how to solve a common problem:
+
+```{r example}
+library(gIVCV)
 library(MASS)
 library(tidyverse)
 library(Formula)
@@ -26,7 +36,9 @@ library(sjPlot)
 library(gIVCV)
 library(knitr)
 select <- dplyr::select
+## basic example code
 ```
+
 
 # IVCV with raw data
 ```{r}

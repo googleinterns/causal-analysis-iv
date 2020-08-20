@@ -58,7 +58,3 @@ cond_dis <- function(mu, sigma, tau, theta) {
     sigma
   return(list(mu_cond = mu_cond, sigma_cond = sigma_cond))
 }
-
-
-
-
