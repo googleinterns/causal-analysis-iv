@@ -1,0 +1,2881 @@
+---
+title: "Data Analysis"
+date: "8/20/2020"
+output: html_document
+---
+# Setup
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      warning = FALSE,
+                      comment = NA)
+options(scipen = 999)
+options(digits = 5)
+# options(scipen = 0)
+library(tidyverse)
+library(plm)
+library(lme4)
+library(summarytools)
+library(lmtest)
+library(skimr)
+library(lfe)
+library(car)
+library(broom)
+library(ggfortify)
+library(sjPlot)
+library(sandwich)
+library(knitr)
+theme_set(theme_classic())
+agsa <- read.csv("~/Downloads/agsa (4).csv")
+maps <- read.csv("~/Downloads/maps (1).csv")
+all_apps <- read.csv("~/Downloads/all_apps_dau.csv")
+```
+
+# Helper functions
+```{r}
+# identify multiple experiments under the same experiment id
+repeted_ID <- function(data) {
+  data %>%
+    filter(
+      metric %in% c(
+        "android_metrics::data_app_crash_sessions",
+        "android_metrics::data_app_native_crash_sessions",
+        "android_metrics::data_app_native_crash_sessions",
+        "android_metrics::system_app_native_crash_sessions",
+        "android_metrics::jank_rate",
+        "android_metrics::net_sessions",
+        "android_metrics::geometric_mean_screen_off_hours_per_battery",
+        "android_metrics::battery_sessions",
+        "search::agsa_first_draw_done_95th_latency",
+        "android_metrics::system_app_anr_sessions",
+        "android_metrics::data_app_anr_sessions",
+        "android_metrics::system_app_crash_sessions",
+        "androidmetrics::ew_drain_rate_screen_off_battery_level",
+        "search::cwsearch",
+        "search::dauwsearchornow"
+      )
+    ) %>%  pivot_longer(
+      cols = value.control:value.experiment,
+      names_to = "ifExp",
+      values_to = "metric_value"
+    ) %>%
+    pivot_wider(
+      id_cols = c(control.id, ifExp),
+      names_from = metric,
+      values_from = c(metric_value),
+      values_fn = length
+    ) %>% filter(`android_metrics::battery_sessions` >= 2) %>%
+    pull(control.id) %>%
+    paste0(collapse = ", ")
+}
+
+```
+
+
+# Search
+## Descriptive statistics
+```{r}
+# check repeated experiments
+# agsa %>% repeted_ID()
+agsa %>%
+  filter(
+    metric %in% c(
+      "android_metrics::data_app_crash_sessions",
+      "android_metrics::data_app_native_crash_sessions",
+      "android_metrics::data_app_native_crash_sessions",
+      "android_metrics::system_app_native_crash_sessions",
+      "android_metrics::jank_rate",
+      "android_metrics::net_sessions",
+      "android_metrics::geometric_mean_screen_off_hours_per_battery",
+      "android_metrics::battery_sessions",
+      "search::agsa_first_draw_done_95th_latency",
+      "android_metrics::system_app_anr_sessions",
+      "android_metrics::data_app_anr_sessions",
+      "android_metrics::system_app_crash_sessions",
+      "androidmetrics::ew_drain_rate_screen_off_battery_level"
+    )
+  ) %>%
+  filter(!control.id %in% c(8540245, 8555414)) %>% #repeated experiments
+  pivot_longer(
+    cols = value.control:value.experiment,
+    names_to = "ifExp",
+    values_to = "metric_value"
+  ) 
+
+# tidy data
+dat_agsa <-
+  agsa %>%
+  filter(
+    metric %in% c(
+      "android_metrics::data_app_crash_sessions",
+      "android_metrics::data_app_native_crash_sessions",
+      "android_metrics::data_app_native_crash_sessions",
+      "android_metrics::system_app_native_crash_sessions",
+      "android_metrics::jank_rate",
+      "android_metrics::net_sessions",
+      "android_metrics::geometric_mean_screen_off_hours_per_battery",
+      "android_metrics::battery_sessions",
+      "search::agsa_first_draw_done_95th_latency",
+      "android_metrics::system_app_anr_sessions",
+      "android_metrics::data_app_anr_sessions",
+      "android_metrics::system_app_crash_sessions",
+      "androidmetrics::ew_drain_rate_screen_off_battery_level"
+    )
+  ) %>%
+  filter(!control.id %in% c(8540245, 8555414)) %>% #repeated experiments
+  pivot_longer(
+    cols = value.control:value.experiment,
+    names_to = "ifExp",
+    values_to = "metric_value"
+  ) %>%
+  pivot_wider(
+    id_cols = c(control.id, ifExp),
+    names_from = metric,
+    values_from = c(metric_value)
+  ) %>%
+  mutate(crash_rate_m1 =  100 * ((
+    `android_metrics::data_app_crash_sessions` + `android_metrics::system_app_native_crash_sessions` +
+      `android_metrics::data_app_native_crash_sessions` + `android_metrics::system_app_crash_sessions`
+  ) / `android_metrics::net_sessions`
+  )) %>% mutate(crash_rate_m2 =  100 * ((
+    `android_metrics::data_app_crash_sessions` + `android_metrics::system_app_native_crash_sessions` +
+      `android_metrics::data_app_native_crash_sessions` + `android_metrics::system_app_crash_sessions`
+    + `android_metrics::system_app_anr_sessions` + `android_metrics::data_app_anr_sessions`
+  ) / `android_metrics::net_sessions`
+  )) %>% mutate(crash_rate_crash =  100 * ((
+    `android_metrics::data_app_crash_sessions` +
+      `android_metrics::system_app_crash_sessions`
+  ) / `android_metrics::net_sessions`
+  )) %>% mutate(crash_rate_native =  100 * ((
+    `android_metrics::system_app_native_crash_sessions` +
+      `android_metrics::data_app_native_crash_sessions`
+  ) / `android_metrics::net_sessions`
+  )) %>% mutate(crash_rate_anr =  100 * ((
+    `android_metrics::system_app_anr_sessions` + `android_metrics::data_app_anr_sessions`
+  ) / `android_metrics::net_sessions`
+  )) %>%  rename(
+    data_app_crash_sessions = `android_metrics::data_app_crash_sessions`,
+    data_app_native_crash_sessions = `android_metrics::data_app_native_crash_sessions`,
+    system_app_native_crash_sessions = `android_metrics::system_app_native_crash_sessions`,
+    jank_rate = `android_metrics::jank_rate`,
+    net_sessions = `android_metrics::net_sessions`,
+    geometric_mean_screen_off_hours_per_battery = `android_metrics::geometric_mean_screen_off_hours_per_battery`,
+    battery_sessions = `android_metrics::battery_sessions`,
+    latency = `search::agsa_first_draw_done_95th_latency`,
+    drain_rate = `androidmetrics::ew_drain_rate_screen_off_battery_level`
+  ) %>%
+  mutate(outcome = net_sessions / battery_sessions) %>% drop_na()
+
+# data distribution
+skim(dat_agsa)
+```
+
+## Exploration
+```{r}
+# check bivariate relations
+dat_agsa %>%
+  ggplot(aes(x = factor(control.id), y = outcome)) +
+  geom_point(
+    aes(color = factor(ifExp)),
+    position = position_jitter(h = .01, w = 0),
+    size = 3,
+    shape = 17
+  )  +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "Experiment Condition") +
+  scale_x_discrete(name = "Experiment ID/Time", labels = NULL) +
+  theme(text = element_text(size = 20),
+        axis.text.x = element_text(angle = 90, hjust = 1))
+
+# get intraclass correlation by runing a variance component model
+(exp_fit_vcm <- lmer(outcome ~ 1 + (1 | control.id), data = dat_agsa))
+sjstats::icc(exp_fit_vcm)
+
+dat_agsa %>%
+  ggplot(aes(x = factor(control.id), y = drain_rate)) +
+  geom_point(
+    aes(color = factor(ifExp)),
+    position = position_jitter(h = 0, w = 1),
+    size = 3,
+    shape = 17
+  ) +
+  scale_x_discrete(name = "Experiment ID/Time", labels = NULL) + labs(color = "Experiment Condition")
+
+dat_agsa %>%
+  ggplot(aes(x = factor(control.id), y = latency)) +
+  geom_point(
+    aes(color = factor(ifExp)),
+    position = position_jitter(h = 0, w = 1),
+    size = 3,
+    shape = 17
+  ) +
+  scale_x_discrete(name = "Experiment ID/Time", labels = NULL) + labs(color = "Experiment Condition")
+
+dat_agsa %>%
+  ggplot(aes(x = factor(control.id), y = jank_rate)) +
+  geom_point(
+    aes(color = factor(ifExp)),
+    position = position_jitter(h = 0, w = 1),
+    size = 3,
+    shape = 17
+  ) +
+  scale_x_discrete(name = "Experiment ID/Time", labels = NULL)
+
+dat_agsa %>%
+  ggplot(aes(x = factor(control.id), y = crash_rate_anr)) +
+  geom_point(
+    aes(color = factor(ifExp)),
+    position = position_jitter(h = 0, w = 1),
+    size = 3,
+    shape = 17
+  ) +
+  scale_x_discrete(name = "Experiment ID/Time", labels = NULL)
+
+
+dat_agsa %>%
+  ggplot(aes(x = factor(control.id), y = crash_rate_m1)) +
+  geom_point(
+    aes(color = factor(ifExp)),
+    position = position_jitter(h = 0, w = 1),
+    size = 3,
+    shape = 17
+  ) +
+  scale_x_discrete(name = "Experiment ID/Time", labels = NULL)
+
+dat_agsa %>%
+  ggplot(aes(x = factor(control.id), y = crash_rate_m2)) +
+  geom_point(
+    aes(color = factor(ifExp)),
+    position = position_jitter(h = 0, w = 1),
+    size = 3,
+    shape = 17
+  ) +
+  scale_x_discrete(name = "Experiment ID/Time", labels = NULL)
+
+
+# bivariate relations
+dat_agsa %>%
+  ggplot(aes(x = drain_rate, y = outcome)) +
+  geom_point(
+    aes(color = factor(control.id)),
+    position = position_jitter(h = 0, w = 1),
+    size = 3,
+    shape = 17
+  ) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "Experiment Condition")
+
+
+dat_agsa %>%
+  ggplot(aes(x = drain_rate, y = outcome)) +
+  geom_point(
+    aes(color = control.id),
+    position = position_jitter(h = 0, w = 1),
+    size = 3,
+    shape = 17
+  ) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "Experiment Condition")
+
+dat_agsa %>%
+  ggplot(aes(x = latency, y = outcome)) +
+  geom_point(
+    aes(color = control.id),
+    position = position_jitter(h = 0, w = 1),
+    size = 3,
+    shape = 17
+  ) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "Experiment Condition")
+
+dat_agsa %>%
+  ggplot(aes(x = crash_rate_anr, y = outcome)) +
+  geom_point(
+    aes(color = control.id),
+    position = position_jitter(h = 0, w = 1),
+    size = 3,
+    shape = 17
+  ) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "Experiment Condition")
+
+dat_agsa %>%
+  ggplot(aes(x = crash_rate_m1, y = outcome)) +
+  geom_point(
+    aes(color = control.id),
+    position = position_jitter(h = 0, w = 1),
+    size = 3,
+    shape = 17
+  ) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "Experiment Condition")
+
+dat_agsa %>%
+  ggplot(aes(x = crash_rate_m2, y = outcome)) +
+  geom_point(
+    aes(color = control.id),
+    position = position_jitter(h = 0, w = 1),
+    size = 3,
+    shape = 17
+  ) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "Experiment Condition")
+
+dat_agsa %>%
+  ggplot(aes(x = jank_rate, y = outcome)) +
+  geom_point(
+    aes(color = control.id),
+    position = position_jitter(h = 0, w = 1),
+    size = 3,
+    shape = 17
+  ) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "Experiment Condition")
+
+dat_agsa %>%
+  ggplot(aes(x = control.id, y = outcome)) +
+  geom_point(
+    aes(color = drain_rate),
+    position = position_jitter(h = 0, w = 1),
+    size = 3,
+    shape = 17
+  ) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "drain_rate")
+
+dat_agsa %>%
+  ggplot(aes(x = control.id, y = outcome)) +
+  geom_point(
+    aes(color = latency),
+    position = position_jitter(h = 0, w = 1),
+    size = 3,
+    shape = 17
+  ) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "drain_rate")
+
+dat_agsa %>%
+  ggplot(aes(x = control.id, y = outcome)) +
+  geom_point(
+    aes(color = jank_rate),
+    position = position_jitter(h = 0, w = 1),
+    size = 3,
+    shape = 17
+  ) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "drain_rate")
+
+
+dat_agsa %>%
+  ggplot(aes(x = control.id, y = outcome)) +
+  geom_point(
+    aes(color = crash_rate_m1),
+    position = position_jitter(h = 0, w = 1),
+    size = 3,
+    shape = 17
+  ) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "crash_rate_m1")
+
+dat_agsa %>%
+  ggplot(aes(x = control.id, y = outcome)) +
+  geom_point(
+    aes(color = crash_rate_m2),
+    position = position_jitter(h = 0, w = 1),
+    size = 3,
+    shape = 17
+  ) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "crash_rate_m2")
+
+
+dat_agsa %>%
+  ggplot(aes(x = control.id, y = outcome)) +
+  geom_point(
+    aes(color = latency),
+    position = position_jitter(h = 0, w = 1),
+    size = 3,
+    shape = 17
+  ) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "Latency")
+
+# see demeand plot
+d <-
+  cbind(dat_agsa, demean(dat_agsa, c("jank_rate", "outcome"), group = "control.id"))
+d <- d %>% rename(y = outcome, x = jank_rate, grp = `control.id`)
+ggplot(d, aes(x, y)) +
+  geom_point(colour = "#555555",
+             size = 2.5,
+             alpha = .5) +
+  see::theme_modern()
+
+ggplot(d, aes(x, y)) +
+  geom_point(colour = "#555555",
+             size = 2.5,
+             alpha = .5) +
+  geom_smooth(method = "lm",
+              se = F,
+              colour = "#555555") +
+  see::theme_modern() +
+  labs(x = "Typing Speed", y = "Typing Errors", colour = "Type Experience")
+```
+
+## Default TSLS
+```{r}
+# total local average treatment effect (LATE)
+lfe::felm(
+  outcome ~ factor(ifExp) + drain_rate,
+  weights = dat_agsa$battery_sessions,
+  data = dat_agsa
+) %>% summary(robust = TRUE)
+lfe::felm(
+  outcome ~ factor(ifExp) + latency,
+  weights = dat_agsa$battery_sessions,
+  data = dat_agsa
+) %>% summary(robust = TRUE)
+lfe::felm(
+  outcome ~ factor(ifExp) + jank_rate,
+  weights = dat_agsa$battery_sessions,
+  data = dat_agsa
+) %>% summary(robust = TRUE)
+lfe::felm(
+  outcome ~ factor(ifExp) + crash_rate_anr,
+  weights = dat_agsa$battery_sessions,
+  data = dat_agsa
+) %>% summary(robust = TRUE)
+lfe::felm(
+  outcome ~ factor(ifExp) + crash_rate_m1,
+  weights = dat_agsa$battery_sessions,
+  data = dat_agsa
+) %>% summary(robust = TRUE)
+lfe::felm(
+  outcome ~ factor(ifExp) + crash_rate_m2,
+  weights = dat_agsa$battery_sessions,
+  data = dat_agsa
+) %>% summary(robust = TRUE)
+
+# partial local average treatment effect (LATE)
+lfe::felm(
+  outcome ~ factor(ifExp) + drain_rate + jank_rate + crash_rate_m1 + latency,
+  weights = dat_agsa$battery_sessions,
+  data = dat_agsa
+) %>% summary(robust = TRUE)
+lfe::felm(
+  net_sessions ~ factor(ifExp) + drain_rate + jank_rate + crash_rate_m1 + latency,
+  weights = dat_agsa$battery_sessions,
+  data = dat_agsa
+) %>% summary(robust = TRUE)
+
+lfe::felm(
+  outcome ~ factor(ifExp) + drain_rate + jank_rate + crash_rate_m2 + latency,
+  weights = dat_agsa$battery_sessions,
+  data = dat_agsa
+) %>% summary(robust = TRUE)
+lfe::felm(
+  net_sessions ~ factor(ifExp) + drain_rate + jank_rate + crash_rate_m2 + latency,
+  weights = dat_agsa$battery_sessions,
+  data = dat_agsa
+) %>% summary(robust = TRUE)
+```
+
+## FE vs. RE models for the second stage - account for cluster structure (control/treatment arms nested in experiment)
+```{r}
+# total effect
+## Jank
+lfe::felm(
+  outcome ~ jank_rate +  factor(ifExp) |
+    factor(control.id),
+  weights = dat_agsa$battery_sessions,
+  data = dat_agsa
+) %>% summary(robust = TRUE)
+
+plm(
+  outcome ~ factor(ifExp) + jank_rate,
+  data = dat_agsa,
+  model = "random",
+  index = "control.id",
+  weights = battery_sessions
+) %>%
+  summary()
+
+plm(
+  outcome ~ factor(ifExp) + jank_rate,
+  data = dat_agsa,
+  model = "within",
+  index = "control.id",
+  weights = battery_sessions
+) %>%
+  summary()
+
+## latency
+lfe::felm(
+  outcome ~ latency +  factor(ifExp) |
+    factor(control.id),
+  weights = dat_agsa$battery_sessions,
+  data = dat_agsa
+) %>% summary(robust = TRUE)
+
+plm(
+  outcome ~ factor(ifExp) + latency,
+  data = dat_agsa,
+  model = "random",
+  index = "control.id",
+  weights = battery_sessions
+) %>%
+  summary()
+
+plm(
+  outcome ~ factor(ifExp) + latency,
+  data = dat_agsa,
+  model = "within",
+  index = "control.id",
+  weights = battery_sessions
+) %>%
+  summary()
+
+# Search
+dat_agsa_new <- data_search_dau %>%
+  filter(app_name == "Search") %>% filter(experiment_app %in% c("googlequicksearchbox_android"))
+dat_agsa_merged <- left_join(dat_agsa, dat_agsa_new)
+
+# total
+## net_session/battery_session
+dat_agsa_merged %>%
+  felm(
+    outcome ~ factor(ifExp)  + latency,
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+dat_agsa_merged %>%
+  felm(
+    outcome ~ factor(ifExp)  + jank_rate,
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+dat_agsa_merged %>%
+  felm(
+    outcome ~ factor(ifExp)  + drain_rate,
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+dat_agsa_merged %>%
+  felm(
+    outcome ~ factor(ifExp)  + crash_rate_m1,
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+dat_agsa_merged %>%
+  felm(
+    outcome ~ factor(ifExp)  + crash_rate_m2,
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+dat_agsa_merged %>%
+  felm(
+    outcome ~ factor(ifExp)  + crash_rate_anr,
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+dat_agsa_merged %>%
+  felm(
+    outcome ~ factor(ifExp)  + latency |
+      factor(control.id),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+
+## pa_dau/battery_session
+dat_agsa_merged %>%
+  felm(
+    outcome2 ~ factor(ifExp)  + latency,
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+dat_agsa_merged %>%
+  felm(
+    outcome2 ~ factor(ifExp)  + jank_rate,
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+dat_agsa_merged %>%
+  felm(
+    outcome2 ~ factor(ifExp)  + drain_rate,
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+dat_agsa_merged %>%
+  felm(
+    outcome2 ~ factor(ifExp)  + crash_rate_m1,
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+dat_agsa_merged %>%
+  felm(
+    outcome2 ~ factor(ifExp)  + crash_rate_m2,
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+dat_agsa_merged %>%
+  felm(
+    outcome2 ~ factor(ifExp)  + crash_rate_anr,
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+dat_agsa_merged %>%
+  felm(
+    outcome ~ factor(ifExp)  + latency,
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+
+## daueuqrt/battery_session
+dat_agsa_merged %>%
+  felm(
+    outcome3 ~ factor(ifExp)  + latency,
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+dat_agsa_merged %>%
+  felm(
+    outcome3 ~ factor(ifExp)  + jank_rate,
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+dat_agsa_merged %>%
+  felm(
+    outcome3 ~ factor(ifExp)  + drain_rate,
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+dat_agsa_merged %>%
+  felm(
+    outcome3 ~ factor(ifExp)  + crash_rate_m1,
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+dat_agsa_merged %>%
+  felm(
+    outcome3 ~ factor(ifExp)  + crash_rate_m2,
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+dat_agsa_merged %>%
+  felm(
+    outcome3 ~ factor(ifExp)  + crash_rate_anr,
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+
+# joint
+dat_agsa_merged %>%
+  felm(
+    outcome ~ factor(ifExp)  + drain_rate + jank_rate + latency + crash_rate_m1,
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+dat_agsa_merged %>%
+  felm(
+    outcome2 ~ factor(ifExp)  + drain_rate + jank_rate + latency + crash_rate_m1,
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+dat_agsa_merged %>%
+  felm(
+    outcome3 ~ factor(ifExp)  + drain_rate + jank_rate + latency + crash_rate_m1,
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+dat_agsa_merged %>%
+  felm(
+    outcome ~ factor(ifExp)  + latency + factor(control.id),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+
+dat_agsa_merged %>%
+  felm(
+    outcome3 ~ factor(ifExp) + crash_rate_m1 + latency |
+      factor(control.id),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+
+dat_agsa_merged %>%
+  felm(
+    outcome ~ factor(ifExp)  + jank_rate |
+      factor(control.id),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+
+dat_agsa_merged %>%
+  felm(
+    dauwquert ~ factor(ifExp) + crash_rate_m1 + latency + drain_rate + jank_rate |
+      factor(control.id),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+
+
+plm(
+  outcome ~ factor(ifExp) + crash_rate_m1 + latency + drain_rate + jank_rate,
+  data = dat_agsa_merged,
+  model = "within",
+  index = "control.id",
+  weights = battery_sessions
+) %>%
+  summary()
+
+
+plm(
+  outcome ~ factor(ifExp) + drain_rate,
+  data = dat_agsa,
+  model = "random",
+  index = "control.id",
+  weights = battery_sessions
+) %>%
+  summary()
+
+ggplot(dat_agsa, aes(jank_rate, outcome, control.id)) +
+  geom_point(colour = "#555555",
+             size = 2.5,
+             alpha = .5) +
+  geom_smooth(method = "lm",
+              se = F,
+              colour = "#555555") +
+  see::theme_modern() +
+  labs(x = "Typing Speed", y = "Typing Errors", colour = "Type Experience")
+
+ggplot(dat_agsa, aes(jank_rate, outcome)) +
+  geom_smooth(mapping = aes(colour = factor(control.id)),
+              method = "lm",
+              se = FALSE) +
+  geom_point(mapping = aes(colour = factor(control.id)),
+             size = 2.2,
+             alpha = .6) +
+  geom_smooth(
+    mapping = aes(x = x_between, y = y_between),
+    method = "lm",
+    se = F,
+    colour = "#444444"
+  ) +
+  see::scale_color_flat() +
+  see::theme_modern() +
+  labs(x = "Typing Speed", y = "Typing Errors", colour = "Type Experience")
+
+lfe::felm(
+  outcome ~ factor(ifExp) + jank_rate |
+    factor(control.id),
+  weights = dat_agsa$battery_sessions,
+  data = dat_agsa
+) %>% summary(robust = TRUE)
+
+## crash rate
+lfe::felm(
+  outcome ~ factor(ifExp) + crash_rate_m1 |
+    factor(control.id),
+  weights = dat_agsa$battery_sessions,
+  data = dat_agsa
+) %>% summary(robust = TRUE)
+lfe::felm(
+  outcome ~ factor(ifExp) + crash_rate_m2 |
+    factor(control.id),
+  weights = dat_agsa$battery_sessions,
+  data = dat_agsa
+) %>% summary(robust = TRUE)
+
+## latnecy
+lfe::felm(
+  outcome ~ factor(ifExp) + latency |
+    factor(control.id),
+  weights = dat_agsa$battery_sessions,
+  data = dat_agsa
+) %>% summary(robust = TRUE)
+
+## drain_rate
+lfe::felm(
+  outcome ~ factor(ifExp) + drain_rate |
+    factor(control.id),
+  weights = dat_agsa$battery_sessions,
+  data = dat_agsa
+) %>% summary(robust = TRUE)
+plm(
+  outcome ~ factor(ifExp) + drain_rate,
+  data = dat_agsa,
+  model = "random",
+  index = "control.id",
+  weights = battery_sessions
+) %>% summary()
+
+## joint
+lfe::felm(
+  outcome ~ factor(ifExp) + crash_rate_m1 + jank_rate + latency + drain_rate |
+    factor(control.id),
+  weights = dat_agsa$battery_sessions,
+  data = dat_agsa
+) %>% summary(robust = TRUE)
+
+FE_agsa_m1_new <-
+  plm(
+    outcome ~ factor(ifExp) + crash_rate_m1 + jank_rate + latency + drain_rate,
+    data = dat_agsa,
+    model = "random",
+    index = "control.id",
+    weights = battery_sessions
+  )
+summary(FE_agsa_m1_new)
+
+FE_agsa_m1_new <-
+  plm(
+    outcome ~ factor(ifExp) + drain_rate ,
+    data = dat_agsa,
+    model = "within",
+    index = "control.id",
+    weights = battery_sessions
+  )
+summary(FE_agsa_m1_new)
+
+FE_agsa_m1_new_unwt <-
+  plm(
+    outcome ~ factor(ifExp) + crash_rate_m1 + jank_rate + latency + drain_rate,
+    data = dat_agsa,
+    model = "within",
+    index = "control.id"
+  )
+summary(FE_agsa_m1_new)
+
+FE_agsa <-
+  lm(
+    net_sessions ~ factor(ifExp) + factor(control.id) + crash_rate_m1 + jank_rate + latency + drain_rate,
+    weights = battery_sessions,
+    data = dat_agsa
+  )
+FE_agsa_unwt <-
+  lm(
+    net_sessions ~ factor(ifExp) + factor(control.id) + crash_rate_m1 + jank_rate + latency + drain_rate,
+    data = dat_agsa
+  )
+
+
+# Random effect models ----
+RE_agsa_m1 <- plm(
+  net_sessions ~ factor(ifExp) + crash_rate_m1 + jank_rate + latency + drain_rate,
+  weights = battery_sessions,
+  data = dat_agsa,
+  model = "random",
+  index = "control.id"
+)
+summary(RE_agsa_m1)
+
+RE_agsa_m1_unwt <- plm(
+  net_sessions ~ factor(ifExp) + crash_rate_m1 + jank_rate + latency + drain_rate,
+  data = dat_agsa,
+  model = "random",
+  index = "control.id"
+)
+
+RE_agsa_m1_new <- plm(
+  outcome ~ factor(ifExp) + crash_rate_m1 + jank_rate + latency + drain_rate,
+  weights = battery_sessions,
+  data = dat_agsa,
+  model = "random",
+  index = "control.id"
+)
+summary(RE_agsa_m1_new)
+
+RE_agsa_m1_new_unwt <- plm(
+  outcome ~ factor(ifExp) + crash_rate_m1 + jank_rate + latency + drain_rate,
+  data = dat_agsa,
+  model = "random",
+  index = "control.id"
+)
+```
+
+### Results
+```{r}
+tab_model(
+  FE_agsa_m1,
+  RE_agsa_m1,
+  FE_agsa_m1_new,
+  RE_agsa_m1_new,
+  show.ci = FALSE,
+  show.se = TRUE,
+  auto.label = FALSE,
+  string.se = "SE",
+  show.icc = TRUE,
+  show.r2 = FALSE,
+  show.aic = FALSE,
+  dv.labels = c(
+    "FE with net_sessions",
+    "RE with net_session",
+    "FE with net_session/battery_session",
+    "RE with net_session/battery_session"
+  ),
+  digits = 5
+)
+
+tab_model(
+  FE_agsa_m1_new,
+  RE_agsa_m1_new,
+  show.ci = FALSE,
+  show.se = TRUE,
+  auto.label = FALSE,
+  string.se = "SE",
+  show.icc = TRUE,
+  show.r2 = FALSE,
+  show.aic = FALSE,
+  dv.labels = c(
+    "FE with net_session/battery_session",
+    "RE with net_session/battery_session"
+  ),
+  digits = 5
+)
+
+tab_model(
+  FE_agsa_m1_unwt,
+  RE_agsa_m1_unwt,
+  FE_agsa_m1_new_unwt,
+  RE_agsa_m1_new_unwt,
+  show.ci = FALSE,
+  show.se = TRUE,
+  auto.label = FALSE,
+  string.se = "SE",
+  show.icc = TRUE,
+  show.r2 = FALSE,
+  show.aic = FALSE,
+  dv.labels = c(
+    "FE with net_sessions (unweighted)",
+    "RE with net_session (unweighted)",
+    "FE with net_session/battery_session (unweighted)",
+    "RE with net_session/battery_session (unweighted)"
+  ),
+  digits = 5
+)
+
+# Hausman test ----
+Htest_agsa_new <-
+  phtest(FE_agsa_m1_new, RE_agsa_m1_new, method = c("chisq", "aux")) %>%
+  tidy()
+Htest_agsa <-
+  phtest(FE_agsa_m1, RE_agsa_m1, method = c("chisq", "aux")) %>% tidy()
+bind_rows(Htest_agsa, Htest_agsa_new) %>%
+  add_column(
+    outcome = c("net_session",            "net_session/battery_session"),
+    .before = "statistic"
+  ) %>%
+  select(-alternative) %>%
+  kable()
+```
+
+### Check instrument strength
+```{r}
+# check strength of instruments
+crash_1 <- lm(crash_rate_m1 ~ factor(control.id) + factor(ifExp), data = dat_agsa,
+  weights = battery_sessions) 
+crash_2 <- lm(crash_rate_m1 ~ 1, data = dat_agsa,
+  weights = battery_sessions) 
+anova(crash_1, crash_2)
+
+jank_rate_1 <- lm(jank_rate ~ factor(control.id) + factor(ifExp), data = dat_agsa,
+  weights = battery_sessions) 
+jank_rate_2 <- lm(jank_rate ~ 1, data = dat_agsa,
+  weights = battery_sessions) 
+anova(jank_rate_1, jank_rate_2)
+
+latency_1 <- lm(latency ~ factor(control.id) + factor(ifExp), data = dat_agsa,
+  weights = battery_sessions) 
+latency_2 <- lm(latency ~ 1, data = dat_agsa,
+  weights = battery_sessions) 
+anova(latency_1, latency_2)
+
+drain_rate_1 <- lm(drain_rate ~ factor(control.id) + factor(ifExp), data = dat_agsa,
+  weights = battery_sessions) 
+drain_rate_2 <- lm(drain_rate ~ 1, data = dat_agsa,
+  weights = battery_sessions) 
+anova(drain_rate_1, drain_rate_2)
+```
+
+### Diagnostics assuming it is a linear Gaussian model
+No need to assume a Gaussian linear model (robust s.e. with best linear approximation for interpretation)
+```{r}
+# check model assumption as if it was a Gaussian linear model
+### linearity
+plot(FE_agsa, 1)
+crPlots(FE_agsa)
+### Homogeneity of variance
+plot(FE_agsa, 3)
+### Normality
+plot(FE_agsa, 2)
+### Leverage points
+plot(FE_agsa, 5)
+### Test for autocorrelated Errors
+durbinWatsonTest(FE_agsa)
+
+### linearity
+plot(FE_agsa_unwt, 1)
+crPlots(FE_agsa_unwt)
+### Homogeneity of variance
+plot(FE_agsa_unwt, 3)
+### Normality
+plot(FE_agsa_unwt, 2)
+### Leverage points
+plot(FE_agsa_unwt, 5)
+### Test for autocorrelated Errors
+durbinWatsonTest(FE_agsa_unwt)
+
+
+FE_agsa_new <- lm(outcome ~ factor(ifExp) + factor(control.id) + crash_rate_m1 + jank_rate + latency + drain_rate, weights = battery_sessions, data = dat_agsa)
+FE_agsa_new_unwt <- lm(outcome ~ factor(ifExp) + factor(control.id) + crash_rate_m1 + jank_rate + latency + drain_rate, data = dat_agsa)
+
+# FE with new outcome, diagnostics ----
+### linearity
+plot(FE_agsa_new, 1)
+crPlots(FE_agsa_new)
+### Homogeneity of variance
+plot(FE_agsa_new, 3)
+plot(FE_agsa_new, 3)
+
+### Normality
+plot(FE_agsa_new, 2)
+### Leverage points
+plot(FE_agsa_new, 5)
+### Test for autocorrelated Errors
+durbinWatsonTest(FE_agsa_new)
+
+### linearity
+plot(FE_agsa_new_unwt, 1)
+crPlots(FE_agsa_new_unwt)
+### Homogeneity of variance
+plot(FE_agsa_new_unwt, 3)
+plot(FE_agsa_new_unwt, 3)
+
+### Normality
+plot(FE_agsa_new_unwt, 2)
+### Leverage points
+plot(FE_agsa_new_unwt, 5)
+### Test for autocorrelated Errors
+durbinWatsonTest(FE_agsa_new_unwt)
+```
+
+# Maps
+## Descriptive statistics
+```{r}
+dat_maps <- maps %>%
+  filter(
+    metric %in% c(
+      "android_metrics::data_app_crash_sessions",
+      "android_metrics::data_app_native_crash_sessions",
+      "android_metrics::data_app_native_crash_sessions",
+      "android_metrics::system_app_native_crash_sessions",
+      "android_metrics::jank_rate",
+      "android_metrics::net_sessions",
+      "android_metrics::geometric_mean_screen_off_hours_per_battery",
+      "android_metrics::battery_sessions",
+      "search::agsa_first_draw_done_95th_latency",
+      "android_metrics::system_app_anr_sessions",
+      "android_metrics::data_app_anr_sessions",
+      "android_metrics::system_app_crash_sessions",
+      "androidmetrics::ew_drain_rate_screen_off_battery_level",
+      "search::cwsearch",
+      "search::dauwsearchornow"
+    )
+  ) %>%
+  pivot_longer(
+    cols = value.control:value.experiment,
+    names_to = "ifExp",
+    values_to = "metric_value"
+  ) %>%
+  pivot_wider(
+    id_cols = c(control.id, ifExp),
+    names_from = metric,
+    values_from = c(metric_value)
+  ) %>%
+  mutate(crash_rate_m1 =  100 * ((
+    `android_metrics::data_app_crash_sessions` + `android_metrics::system_app_native_crash_sessions` +
+      `android_metrics::data_app_native_crash_sessions` + `android_metrics::system_app_crash_sessions`
+  ) / `android_metrics::net_sessions`
+  )) %>% mutate(crash_rate_m2 =  100 * ((
+    `android_metrics::data_app_crash_sessions` + `android_metrics::system_app_native_crash_sessions` +
+      `android_metrics::data_app_native_crash_sessions` + `android_metrics::system_app_crash_sessions`
+    + `android_metrics::system_app_anr_sessions` + `android_metrics::data_app_anr_sessions`
+  ) / `android_metrics::net_sessions`
+  )) %>% mutate(crash_rate_crash =  100 * ((
+    `android_metrics::data_app_crash_sessions` +
+      `android_metrics::system_app_crash_sessions`
+  ) / `android_metrics::net_sessions`
+  )) %>% mutate(crash_rate_native =  100 * ((
+    `android_metrics::system_app_native_crash_sessions` +
+      `android_metrics::data_app_native_crash_sessions`
+  ) / `android_metrics::net_sessions`
+  )) %>% mutate(crash_rate_anr =  100 * ((
+    `android_metrics::system_app_anr_sessions` + `android_metrics::data_app_anr_sessions`
+  ) / `android_metrics::net_sessions`
+  )) %>% rename(
+    data_app_crash_sessions = `android_metrics::data_app_crash_sessions`,
+    data_app_native_crash_sessions = `android_metrics::data_app_native_crash_sessions`,
+    system_app_native_crash_sessions = `android_metrics::system_app_native_crash_sessions`,
+    jank_rate = `android_metrics::jank_rate`,
+    net_sessions = `android_metrics::net_sessions`,
+    geometric_mean_screen_off_hours_per_battery = `android_metrics::geometric_mean_screen_off_hours_per_battery`,
+    battery_sessions = `android_metrics::battery_sessions`,
+    latency = `search::agsa_first_draw_done_95th_latency`,
+    drain_rate = `androidmetrics::ew_drain_rate_screen_off_battery_level`
+  ) %>%
+  mutate(outcome = net_sessions / battery_sessions)
+
+skim(dat_maps)
+```
+
+## Exploration
+```{r}
+# strong within experiment dependence
+dat_maps %>% 
+  ggplot(aes(x = factor(control.id), y = outcome)) + 
+  geom_point(aes(color = factor(ifExp)), position = position_jitter(h=.1, w=1), size = 3, shape = 17)  +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "Experiment Condition") + 
+  scale_x_discrete(name ="Experiment ID/Time", labels = NULL)
+
+# get intraclass correlation by runing a variance component model
+(exp_fit_vcm <- lmer(outcome ~ 1 + (1|control.id), data = dat_maps))
+sjstats::icc(exp_fit_vcm)
+
+# SH gets better over time/experiment
+dat_maps %>% 
+  ggplot(aes(x = factor(control.id), y = drain_rate)) + 
+  geom_point(aes(color = factor(ifExp)), position = position_jitter(h=0, w=1), size = 3, shape = 17) + 
+  scale_x_discrete(name ="Experiment ID/Time", labels = NULL) + labs(color = "Experiment Condition")
+
+# jank rate gets worse recently SAME for maps
+dat_maps %>% 
+  ggplot(aes(x = factor(control.id), y = jank_rate)) + 
+  geom_point(aes(color = factor(ifExp)), position = position_jitter(h=0, w=1), size = 3, shape = 17) + 
+  scale_x_discrete(name ="Experiment ID/Time", labels = NULL)
+
+dat_maps %>% 
+  ggplot(aes(x = factor(control.id), y = crash_rate_m1)) + 
+  geom_point(aes(color = factor(ifExp)), position = position_jitter(h=0, w=1), size = 3, shape = 17) + 
+  scale_x_discrete(name ="Experiment ID/Time", labels = NULL)
+
+dat_maps %>% 
+  ggplot(aes(x = factor(control.id), y = crash_rate_m2)) + 
+  geom_point(aes(color = factor(ifExp)), position = position_jitter(h=0, w=1), size = 3, shape = 17) + 
+  scale_x_discrete(name ="Experiment ID/Time", labels = NULL)
+
+
+# binary relations
+dat_maps %>%
+  ggplot(aes(x = drain_rate, y = outcome)) +
+  geom_point(
+    aes(color = factor(control.id)),
+    position = position_jitter(h = 0, w = 1),
+    size = 3,
+    shape = 17
+  ) + 
+  ylab("Net_sessions/Battery_sessions") + labs(color = "Experiment Condition")
+
+
+# latter experiment tend to have higher outcome
+dat_maps %>% 
+  ggplot(aes(x = drain_rate, y = outcome)) + 
+  geom_point(aes(color = control.id), position = position_jitter(h=0, w=1), size = 3, shape = 17) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "Experiment Condition")
+
+
+dat_maps %>% 
+  ggplot(aes(x = crash_rate_m1, y = outcome)) + 
+  geom_point(aes(color = control.id), position = position_jitter(h=0, w=1), size = 3, shape = 17) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "Experiment Condition")
+
+dat_maps %>% 
+  ggplot(aes(x = crash_rate_m2, y = outcome)) + 
+  geom_point(aes(color = control.id), position = position_jitter(h=0, w=1), size = 3, shape = 17) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "Experiment Condition")
+
+dat_maps %>% 
+  ggplot(aes(x = jank_rate, y = outcome)) + 
+  geom_point(aes(color = control.id), position = position_jitter(h=0, w=1), size = 3, shape = 17) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "Experiment Condition")
+
+dat_maps %>% 
+  ggplot(aes(x = control.id, y = outcome)) + 
+  geom_point(aes(color = drain_rate), position = position_jitter(h=0, w=1), size = 3, shape = 17) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "drain_rate")
+
+dat_maps %>% 
+  ggplot(aes(x = control.id, y = outcome)) + 
+  geom_point(aes(color = latency), position = position_jitter(h=0, w=1), size = 3, shape = 17) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "latency")
+
+dat_maps %>% 
+  ggplot(aes(x = control.id, y = outcome)) + 
+  geom_point(aes(color = jank_rate), position = position_jitter(h=0, w=1), size = 3, shape = 17) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "jank_rate")
+
+
+dat_maps %>% 
+  ggplot(aes(x = control.id, y = outcome)) + 
+  geom_point(aes(color = crash_rate_m1), position = position_jitter(h=0, w=1), size = 3, shape = 17) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "crash_rate_m1")
+
+dat_maps %>% 
+  ggplot(aes(x = control.id, y = outcome)) + 
+  geom_point(aes(color = crash_rate_m2), position = position_jitter(h=0, w=1), size = 3, shape = 17) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "crash_rate_m2")
+```
+
+
+
+## Default TSLS
+```{r}
+# total local average treatment effect (LATE)
+lfe::felm(
+  outcome ~ factor(ifExp) + drain_rate,
+  weights = dat_maps$battery_sessions,
+  data = dat_maps
+) %>% summary(robust = TRUE)
+lfe::felm(
+  outcome ~ factor(ifExp) + jank_rate,
+  weights = dat_maps$battery_sessions,
+  data = dat_maps
+) %>% summary(robust = TRUE)
+lfe::felm(
+  outcome ~ factor(ifExp) + crash_rate_anr,
+  weights = dat_maps$battery_sessions,
+  data = dat_maps
+) %>% summary(robust = TRUE)
+lfe::felm(
+  outcome ~ factor(ifExp) + crash_rate_m1,
+  weights = dat_maps$battery_sessions,
+  data = dat_maps
+) %>% summary(robust = TRUE)
+lfe::felm(
+  outcome ~ factor(ifExp) + crash_rate_m2,
+  weights = dat_maps$battery_sessions,
+  data = dat_maps
+) %>% summary(robust = TRUE)
+
+# partial local average treatment effect (LATE)
+lfe::felm(
+  outcome ~ factor(ifExp) + drain_rate + jank_rate + crash_rate_m1,
+  weights = dat_maps$battery_sessions,
+  data = dat_maps
+) %>% summary(robust = TRUE)
+lfe::felm(
+  net_sessions ~ factor(ifExp) + drain_rate + jank_rate + crash_rate_m1,
+  weights = dat_maps$battery_sessions,
+  data = dat_maps
+) %>% summary(robust = TRUE)
+lfe::felm(
+  net_sessions ~ factor(ifExp) + drain_rate + jank_rate + crash_rate_m2,
+  weights = dat_maps$battery_sessions,
+  data = dat_maps
+) %>% summary(robust = TRUE)
+```
+
+## FE vs. RE models for the second stage - account for cluster structure (control/treatment arms nested in experiment)
+```{r}
+# net_session as outcome
+FE_maps_m1 <-
+  plm(net_sessions ~ factor(ifExp) + crash_rate_m1 + jank_rate + drain_rate,
+      data = dat_maps,
+      model = "within",
+      index = "control.id",
+      weights = battery_sessions)
+summary(FE_maps_m1)
+
+lfe::felm(outcome ~ factor(ifExp) + drain_rate | factor(control.id), weights = dat_maps$battery_sessions, data = dat_maps) %>% summary(robust=TRUE)
+
+# crash
+lfe::felm(outcome ~ factor(ifExp) + crash_rate_m1| factor(control.id), weights = dat_maps$battery_sessions, data = dat_maps) %>% summary(robust=TRUE)
+lfe::felm(outcome ~ factor(ifExp) + crash_rate_m2| factor(control.id), weights = dat_maps$battery_sessions, data = dat_maps) %>% summary(robust=TRUE)
+
+# drain rate
+lfe::felm(outcome ~ factor(ifExp) + drain_rate| factor(control.id), weights = dat_maps$battery_sessions, data = dat_maps) %>% summary(robust=TRUE)
+
+# jank rate
+lfe::felm(outcome ~ factor(ifExp) + jank_rate| factor(control.id), weights = dat_maps$battery_sessions, data = dat_maps) %>% summary(robust=TRUE)
+
+# comparing results with weighting and unweighting
+FE_maps_m1_unwt <-
+  plm(net_sessions ~ factor(ifExp) + crash_rate_m1 + jank_rate + drain_rate,
+      data = dat_maps,
+      model = "within",
+      index = "control.id")
+summary(FE_maps_m1)
+
+FE_maps_m1_new <-
+  plm(outcome ~ factor(ifExp) + crash_rate_m1 + jank_rate + drain_rate,
+      data = dat_maps,
+      model = "within",
+      index = "control.id",
+      weights = battery_sessions)
+summary(FE_maps_m1_new)
+
+FE_maps_m1_new_unwt <-
+  plm(outcome ~ factor(ifExp) + crash_rate_m1 + jank_rate + drain_rate,
+      data = dat_maps,
+      model = "within",
+      index = "control.id")
+summary(FE_maps_m1_new)
+
+FE_maps <- lm(net_sessions ~ factor(ifExp) + factor(control.id) + crash_rate_m1 + jank_rate + drain_rate, weights = battery_sessions, data = dat_maps)
+FE_maps_unwt <- lm(net_sessions ~ factor(ifExp) + factor(control.id) + crash_rate_m1 + jank_rate + drain_rate, data = dat_maps)
+
+# Random effect models ----
+RE_maps_m1 <- plm(
+  net_sessions ~ factor(ifExp) + crash_rate_m1 + jank_rate + drain_rate,
+  weights = battery_sessions,
+  data = dat_maps,
+  model = "random",
+  index = "control.id"
+)
+summary(RE_maps_m1) 
+
+RE_maps_m1_unwt <- plm(
+  net_sessions ~ factor(ifExp) + crash_rate_m1 + jank_rate + drain_rate,
+  data = dat_maps,
+  model = "random",
+  index = "control.id"
+)
+
+RE_maps_m1_new <- plm(
+  outcome ~ factor(ifExp) + crash_rate_m1 + jank_rate + drain_rate,
+  weights = battery_sessions,
+  data = dat_maps,
+  model = "random",
+  index = "control.id"
+)
+summary(RE_maps_m1_new) 
+
+RE_maps_m1_new_unwt <- plm(
+  outcome ~ factor(ifExp) + crash_rate_m1 + jank_rate + drain_rate,
+  data = dat_maps,
+  model = "random",
+  index = "control.id"
+)
+```
+
+### Results
+```{r}
+tab_model(
+  FE_maps_m1, 
+  RE_maps_m1, 
+  FE_maps_m1_new, 
+  RE_maps_m1_new,
+  show.ci = FALSE, 
+  show.se = TRUE, 
+  auto.label = FALSE, 
+  string.se = "SE",
+  show.icc = TRUE,
+  show.r2 = FALSE,
+  show.aic = FALSE,
+  dv.labels = c("FE with net_sessions", 
+                "RE with net_session", 
+                "FE with net_session/battery_session", 
+                "RE with net_session/battery_session"),
+  digits = 5
+)
+
+tab_model(
+  FE_maps_m1_new, 
+  RE_maps_m1_new,
+  show.ci = FALSE, 
+  show.se = TRUE, 
+  auto.label = FALSE, 
+  string.se = "SE",
+  show.icc = TRUE,
+  show.r2 = FALSE,
+  show.aic = FALSE,
+  dv.labels = c("FE with net_session/battery_session", 
+                "RE with net_session/battery_session"),
+  digits = 5
+)
+
+tab_model(
+  FE_maps_m1_unwt, 
+  RE_maps_m1_unwt, 
+  FE_maps_m1_new_unwt, 
+  RE_maps_m1_new_unwt,
+  show.ci = FALSE, 
+  show.se = TRUE, 
+  auto.label = FALSE, 
+  string.se = "SE",
+  show.icc = TRUE,
+  show.r2 = FALSE,
+  show.aic = FALSE,
+  dv.labels = c("FE with net_sessions (unweighted)", 
+                "RE with net_session (unweighted)", 
+                "FE with net_session/battery_session (unweighted)", 
+                "RE with net_session/battery_session (unweighted)"),
+  digits = 5
+)
+
+# Hausman test ----
+Htest_maps_new <- 
+  phtest(FE_maps_m1_new, RE_maps_m1_new, method = c("chisq", "aux")) %>% 
+  tidy()
+Htest_maps <- 
+  phtest(FE_maps_m1, RE_maps_m1, method = c("chisq", "aux")) %>% tidy()
+bind_rows(Htest_maps, Htest_maps_new) %>%
+  add_column(outcome = c("net_session",            "net_session/battery_session"),
+             .before = "statistic") %>%
+  select(-alternative) %>% 
+  kable()
+```
+
+### Check instrument strength
+```{r}
+# check strength of instruments not authentic way with no access to raw data but did it anyway
+crash_1 <- lm(crash_rate_m1 ~ factor(control.id) + factor(ifExp), data = dat_maps,
+  weights = battery_sessions) 
+crash_2 <- lm(crash_rate_m1 ~ 1, data = dat_maps,
+  weights = battery_sessions) 
+anova(crash_1, crash_2)
+
+jank_rate_1 <- lm(jank_rate ~ factor(control.id) + factor(ifExp), data = dat_maps,
+  weights = battery_sessions) 
+jank_rate_2 <- lm(jank_rate ~ 1, data = dat_maps,
+  weights = battery_sessions) 
+anova(jank_rate_1, jank_rate_2)
+
+drain_rate_1 <- lm(drain_rate ~ factor(control.id) + factor(ifExp), data = dat_maps,
+  weights = battery_sessions) 
+drain_rate_2 <- lm(drain_rate ~ 1, data = dat_maps,
+  weights = battery_sessions) 
+anova(drain_rate_1, drain_rate_2)
+```
+
+
+### Diagnostics see if gaussion linear model assumption met - if not - best linear approximation
+```{r}
+### linearity
+plot(FE_maps, 1)
+crPlots(FE_maps)
+### Homogeneity of variance
+plot(FE_maps, 3)
+### Normality
+plot(FE_maps, 2)
+### Leverage points
+plot(FE_maps, 5)
+### Test for autocorrelated Errors
+durbinWatsonTest(FE_maps)
+
+### linearity
+plot(FE_maps_unwt, 1)
+crPlots(FE_maps_unwt)
+### Homogeneity of variance
+plot(FE_maps_unwt, 3)
+### Normality
+plot(FE_maps_unwt, 2)
+### Leverage points
+plot(FE_maps_unwt, 5)
+### Test for autocorrelated Errors
+durbinWatsonTest(FE_maps_unwt)
+
+
+FE_maps_new <- lm(outcome ~ factor(ifExp) + factor(control.id) + crash_rate_m1 + jank_rate + drain_rate, weights = battery_sessions, data = dat_maps)
+FE_maps_new_unwt <- lm(outcome ~ factor(ifExp) + factor(control.id) + crash_rate_m1 + jank_rate + drain_rate, data = dat_maps)
+
+# FE with new outcome, diagnostics ----
+### linearity
+plot(FE_maps_new, 1)
+crPlots(FE_maps_new)
+### Homogeneity of variance
+plot(FE_maps_new, 3)
+plot(FE_maps_new, 3)
+
+### Normality
+plot(FE_maps_new, 2)
+### Leverage points
+plot(FE_maps_new, 5)
+### Test for autocorrelated Errors
+durbinWatsonTest(FE_maps_new)
+
+### linearity
+plot(FE_maps_new_unwt, 1)
+crPlots(FE_maps_new_unwt)
+### Homogeneity of variance
+plot(FE_maps_new_unwt, 3)
+plot(FE_maps_new_unwt, 3)
+
+### Normality
+plot(FE_maps_new_unwt, 2)
+### Leverage points
+plot(FE_maps_new_unwt, 5)
+### Test for autocorrelated Errors
+durbinWatsonTest(FE_maps_new_unwt)
+```
+
+# All apps net_session/battery_session
+## Descriptive statistics
+```{r}
+# clean data for all applications
+data_all <- 
+  all_apps %>%
+  pivot_longer(
+    cols = value.control:value.experiment,
+    names_to = "ifExp",
+    values_to = "metric_value"
+  ) %>%
+  pivot_wider(
+    id_cols = c(control.id, experiment.id, experiment_app, app_name, ifExp),
+    names_from = metric,
+    values_from = c(metric_value)
+  ) %>% unnest(`android_metrics::battery_sessions`:`androidmetrics::ew_drain_rate_screen_off_battery_level`) %>%
+  mutate(crash_rate_m1 =  100 * ((
+    `android_metrics::data_app_crash_sessions` + `android_metrics::system_app_native_crash_sessions` +
+      `android_metrics::data_app_native_crash_sessions` + `android_metrics::system_app_crash_sessions`
+  ) / `android_metrics::net_sessions`
+  )) %>% mutate(crash_rate_m2 =  100 * ((
+    `android_metrics::data_app_crash_sessions` + `android_metrics::system_app_native_crash_sessions` +
+      `android_metrics::data_app_native_crash_sessions` + `android_metrics::system_app_crash_sessions`
+    + `android_metrics::system_app_anr_sessions` + `android_metrics::data_app_anr_sessions`
+  ) / `android_metrics::net_sessions`
+  )) %>% mutate(crash_rate_crash =  100 * ((
+    `android_metrics::data_app_crash_sessions` +
+      `android_metrics::system_app_crash_sessions`
+  ) / `android_metrics::net_sessions`
+  )) %>% mutate(crash_rate_native =  100 * ((
+    `android_metrics::system_app_native_crash_sessions` +
+      `android_metrics::data_app_native_crash_sessions`
+  ) / `android_metrics::net_sessions`
+  )) %>% mutate(crash_rate_anr =  100 * ((
+    `android_metrics::system_app_anr_sessions` + `android_metrics::data_app_anr_sessions`
+  ) / `android_metrics::net_sessions`
+  )) %>%  rename(
+    data_app_crash_sessions = `android_metrics::data_app_crash_sessions`,
+    data_app_native_crash_sessions = `android_metrics::data_app_native_crash_sessions`,
+    system_app_native_crash_sessions = `android_metrics::system_app_native_crash_sessions`,
+    jank_rate = `android_metrics::jank_rate`,
+    net_sessions = `android_metrics::net_sessions`,
+    geometric_mean_screen_off_hours_per_battery = `android_metrics::geometric_mean_screen_off_hours_per_battery`,
+    battery_sessions = `android_metrics::battery_sessions`,
+    latency = `search::agsa_first_draw_done_95th_latency`,
+    drain_rate = `androidmetrics::ew_drain_rate_screen_off_battery_level`
+  ) %>% mutate(outcome = net_sessions/battery_sessions) 
+
+# check missing values and data distribution
+skim(data_all)
+```
+
+
+
+## Exploration & Analysis
+```{r}
+data_all %>% 
+  ggplot(aes(x = factor(control.id), y = outcome)) + 
+  geom_point(aes(color = factor(app_name)))  +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "app_name") + 
+  scale_x_discrete(name ="Experiment ID/Time", labels = NULL)
+
+data_all %>% 
+  filter(app_name == "Search") %>% 
+  ggplot(aes(x = factor(control.id), y = outcome)) + 
+  geom_point(aes(color = factor(ifExp)))  +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "app_name") + 
+  scale_x_discrete(name ="Experiment ID/Time", labels = NULL)
+
+
+unique(data_all$app_name) %>%
+  as.character() %>%
+  map(., safely( ~ {
+    data_all %>%
+      filter(app_name == .x) %>%
+      drop_na(outcome, ifExp) %>%
+      felm(
+        outcome ~ factor(ifExp) |
+          factor(control.id),
+        weights = .$battery_sessions,
+        data = .
+      ) %>%
+      summary(robust = TRUE)
+  }))
+
+unique(data_all$app_name) %>%
+  as.character() %>%
+  map(., safely( ~ {
+    data_all %>%
+      filter(app_name == .x) %>%
+      drop_na(outcome, ifExp) %>%
+      felm(
+        outcome ~ factor(ifExp) + jank_rate |
+          factor(control.id),
+        weights = .$battery_sessions,
+        data = .
+      ) %>%
+      summary(robust = TRUE)
+  }))
+
+# total effect looping thru apps of interest
+unique(data_all$app_name) %>%
+  as.character() %>%
+  map(., possibly( ~ 
+    data_all %>%
+      filter(app_name == .x) %>%
+      drop_na(outcome, ifExp) %>%
+      felm(
+        outcome ~ factor(ifExp) + crash_rate_m1 |
+          factor(control.id),
+        weights = .$battery_sessions,
+        data = .
+      ) %>%
+      summary(robust = TRUE)
+  , otherwise = NA))
+
+unique(data_all$app_name) %>%
+  as.character() %>%
+  map(., possibly( ~ 
+    data_all %>%
+      filter(app_name == .x) %>%
+      drop_na(outcome, ifExp) %>%
+      felm(
+        outcome ~ factor(ifExp) + crash_rate_m2 |
+          factor(control.id),
+        weights = .$battery_sessions,
+        data = .
+      ) %>%
+      summary(robust = TRUE)
+  , otherwise = NA))
+
+unique(data_all$app_name) %>%
+  as.character() %>%
+  map(., possibly( ~ 
+    data_all %>%
+      filter(app_name == .x) %>%
+      drop_na(outcome, ifExp) %>%
+      felm(
+        outcome ~ factor(ifExp) + crash_rate_anr |
+          factor(control.id),
+        weights = .$battery_sessions,
+        data = .
+      ) %>%
+      summary(robust = TRUE)
+  , otherwise = NA))
+
+# filter on app_name
+## maps
+data_all %>%
+  filter(app_name == "Maps")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Maps")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Maps")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m2 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Maps")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_anr + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Maps")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  jank_rate + crash_rate_m1 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+
+
+## gmail
+data_all %>%
+  filter(app_name == "Gmail")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Gmail")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Gmail")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m2 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Gmail")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+
+
+## Android Messages
+data_all %>%
+  filter(app_name == "Android Messages")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Android Messages")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Android Messages")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m2 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Android Messages")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_anr + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Android Messages")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+
+## Google Drive
+data_all %>%
+  filter(app_name == "Google Drive")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Google Drive")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Google Drive")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m2 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Google Drive")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_anr + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Google Drive")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+
+## Search
+data_all %>%
+  filter(app_name == "Search")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Search")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Search")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m2 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Search")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_anr + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Search")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+
+## Google Go
+data_all %>%
+  filter(app_name == "Google Go")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Google Go")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Google Go")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m2 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Google Go")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_anr + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Google Go")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+
+## YouTube
+data_all %>%
+  filter(app_name == "YouTube")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "YouTube")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "YouTube")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m2 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "YouTube")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_anr + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "YouTube")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+
+## Google Photos
+data_all %>%
+  filter(app_name == "Google Photos")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Google Photos")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Google Photos")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m2 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Google Photos")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_anr + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Google Photos")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+
+
+# experiment_app & app_name
+## Maps
+data_all %>%
+  filter(app_name == "Maps" &
+           experiment_app == "maps_navigation_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Maps" &
+           experiment_app == "maps_navigation_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_anr + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Maps" &
+           experiment_app == "maps_navigation_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Maps" &
+           experiment_app == "maps_navigation_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m2 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Maps" &
+           experiment_app == "maps_navigation_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+## Andriod msg
+data_all %>%
+  filter(app_name == "Android Messages" &
+           experiment_app == "messages_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Android Messages" &
+           experiment_app == "messages_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_anr + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Android Messages" &
+           experiment_app == "messages_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Android Messages" &
+           experiment_app == "messages_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m2 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Android Messages" &
+           experiment_app == "messages_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+
+## Google Drive 
+data_all %>%
+  filter(app_name == "Google Drive" &
+           experiment_app == "drive_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Google Drive" &
+           experiment_app == "drive_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_anr + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Google Drive" &
+           experiment_app == "drive_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Google Drive" &
+           experiment_app == "drive_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m2 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Google Drive" &
+           experiment_app == "drive_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+
+## Google Photos 
+data_all %>%
+  filter(app_name == "Google Photos" &
+           experiment_app == "photos_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Google Photos" &
+           experiment_app == "photos_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_anr + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Google Photos" &
+           experiment_app == "photos_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Google Photos" &
+           experiment_app == "photos_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m2 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Google Photos" &
+           experiment_app == "photos_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+
+## Google Play services
+data_all %>%
+  filter(app_name == "Google Play services" &
+           experiment_app == "gmscore")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m2 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+
+## Andriod msg
+data_all %>%
+  filter(app_name == "Google Play services" &
+           experiment_app == "messages_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+
+# double filter to get apps being experimented
+data_all %>%
+  filter(app_name == "Maps" &
+           experiment_app == "maps_navigation_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  jank_rate + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>%   summary(robust = TRUE)
+
+
+data_all %>%
+  filter(app_name == "Maps" &
+           experiment_app == "maps_navigation_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  jank_rate + factor(ifExp) |
+      factor(control.id),
+    weights = .$battery_sessions,
+    data = .
+  ) %>%   summary(robust = TRUE)
+
+
+
+# Maps
+data_all %>%
+  filter(app_name == "Maps" &
+           experiment_app == "maps_navigation_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m2 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>%   summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Maps" &
+           experiment_app == "maps_navigation_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m2 + factor(ifExp) |
+      factor(control.id),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Maps" &
+           experiment_app == "maps_navigation_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + jank_rate + factor(ifExp) |
+      factor(control.id),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Search" &
+           experiment_app == "search_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + jank_rate + factor(ifExp) |
+      factor(control.id),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+
+data_all %>%
+  filter(app_name == "Search")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + jank_rate + factor(ifExp) |
+      factor(control.id),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+
+# crash_rate_m1 with ignoring and accounting for cluster structure
+data_all %>%
+  filter(app_name == "Maps" &
+           experiment_app == "maps_navigation_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>%   summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Maps" &
+           experiment_app == "maps_navigation_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + factor(ifExp) |
+      factor(control.id),
+    weights = .$battery_sessions,
+    data = .
+  ) %>%  summary(robust = TRUE)
+
+data_all %>%
+  filter(app_name == "Maps" &
+           experiment_app == "maps_navigation_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_anr + factor(ifExp),
+    weights = .$battery_sessions,
+    data = .
+  ) %>%  summary(robust = TRUE)
+data_all %>%
+  filter(app_name == "Maps" &
+           experiment_app == "maps_navigation_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_anr + factor(ifExp) |
+      factor(control.id),
+    weights = .$battery_sessions,
+    data = .
+  ) %>% summary(robust = TRUE)
+
+# Photos
+data_all %>%
+  filter(app_name ==  "Google Photos" &
+           experiment_app == "photos_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m2 + factor(ifExp) |
+      factor(control.id),
+    weights = .$battery_sessions,
+    data = .
+  ) %>%   summary(robust = TRUE)
+
+data_all %>%
+  filter(app_name ==  "Google Photos" &
+           experiment_app == "photos_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_m1 + factor(ifExp) |
+      factor(control.id),
+    weights = .$battery_sessions,
+    data = .
+  ) %>%   summary(robust = TRUE)
+
+data_all %>%
+  filter(app_name ==  "Google Photos" &
+           experiment_app == "photos_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  factor(ifExp) |
+      factor(control.id),
+    weights = .$battery_sessions,
+    data = .
+  ) %>%
+  summary(robust = TRUE)
+
+# Photos
+data_all %>%
+  filter(app_name ==  "Google Photos" &
+           experiment_app == "photos_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_anr + factor(ifExp) |
+      factor(control.id),
+    weights = .$battery_sessions,
+    data = .
+  ) %>%   summary(robust = TRUE)
+
+data_all %>%
+  filter(app_name ==  "Google Photos" &
+           experiment_app == "photos_android")  %>%
+  drop_na(outcome, ifExp) %>%
+  felm(
+    outcome ~  crash_rate_anr + factor(ifExp) ,
+    weights = .$battery_sessions,
+    data = .
+  ) %>%   summary(robust = TRUE)
+
+# Msgs
+data_all %>% 
+  filter(app_name ==  "Android Messages" &
+           experiment_app == "messages_android")  %>% 
+  drop_na(outcome, ifExp) %>% 
+  felm(outcome ~ jank_rate + factor(ifExp) | factor(control.id), weights = .$battery_sessions, data = .) %>%
+  summary(robust=TRUE)
+data_all %>% 
+  filter(app_name ==  "Android Messages" &
+           experiment_app == "messages_android")  %>% 
+  drop_na(outcome, ifExp) %>% 
+  felm(outcome ~ jank_rate + factor(ifExp), weights = .$battery_sessions, data = .) %>%
+  summary(robust=TRUE)
+
+data_all %>% 
+  filter(app_name ==  "Google Drive" &
+           experiment_app == "drive_android")  %>% 
+  drop_na(outcome, ifExp) %>% 
+  felm(outcome ~ crash_rate_m2 + factor(ifExp)| factor(control.id), weights = .$battery_sessions, data = .) %>%
+  summary(robust=TRUE)
+data_all %>% 
+  filter(app_name ==  "Google Drive" &
+           experiment_app == "drive_android")  %>% 
+  drop_na(outcome, ifExp) %>% 
+  felm(outcome ~ crash_rate_m2 + factor(ifExp), weights = .$battery_sessions, data = .) %>%
+  summary(robust=TRUE)
+data_all %>% 
+  filter(app_name ==  "Google Drive" &
+           experiment_app == "drive_android")  %>% 
+  drop_na(outcome, ifExp) %>% 
+  felm(outcome ~ crash_rate_m1 + factor(ifExp)| factor(control.id), weights = .$battery_sessions, data = .) %>%
+  summary(robust=TRUE)
+data_all %>% 
+  filter(app_name ==  "Google Drive" &
+           experiment_app == "drive_android")  %>% 
+  drop_na(outcome, ifExp) %>% 
+  felm(outcome ~ crash_rate_m1 + factor(ifExp), weights = .$battery_sessions, data = .) %>%
+  summary(robust=TRUE)
+
+data_all %>% 
+  filter(app_name ==  "Google Drive" &
+           experiment_app == "drive_android")  %>% 
+  drop_na(outcome, ifExp) %>% 
+  felm(outcome ~ crash_rate_anr + factor(ifExp)| factor(control.id), weights = .$battery_sessions, data = .) %>%
+  summary(robust=TRUE)
+data_all %>% 
+  filter(app_name ==  "Google Drive" &
+           experiment_app == "drive_android")  %>% 
+  drop_na(outcome, ifExp) %>% 
+  felm(outcome ~ crash_rate_anr + factor(ifExp), weights = .$battery_sessions, data = .) %>%
+  summary(robust=TRUE)
+
+data_all$crash_rate_anr
+# get intraclass correlation by runing a variance component model
+(exp_fit_vcm <- lmer(outcome ~ 1 + (1|control.id), data = dat_maps))
+sjstats::icc(exp_fit_vcm)
+
+dat_maps %>% 
+  ggplot(aes(x = factor(control.id), y = drain_rate)) + 
+  geom_point(aes(color = factor(ifExp)), position = position_jitter(h=0, w=1), size = 3, shape = 17) + 
+  scale_x_discrete(name ="Experiment ID/Time", labels = NULL) + labs(color = "Experiment Condition")
+
+dat_maps %>% 
+  ggplot(aes(x = factor(control.id), y = jank_rate)) + 
+  geom_point(aes(color = factor(ifExp)), position = position_jitter(h=0, w=1), size = 3, shape = 17) + 
+  scale_x_discrete(name ="Experiment ID/Time", labels = NULL)
+
+dat_maps %>% 
+  ggplot(aes(x = factor(control.id), y = crash_rate_m1)) + 
+  geom_point(aes(color = factor(ifExp)), position = position_jitter(h=0, w=1), size = 3, shape = 17) + 
+  scale_x_discrete(name ="Experiment ID/Time", labels = NULL)
+
+dat_maps %>% 
+  ggplot(aes(x = factor(control.id), y = crash_rate_m2)) + 
+  geom_point(aes(color = factor(ifExp)), position = position_jitter(h=0, w=1), size = 3, shape = 17) + 
+  scale_x_discrete(name ="Experiment ID/Time", labels = NULL)
+
+
+# binary relations
+dat_maps %>%
+  ggplot(aes(x = drain_rate, y = outcome)) +
+  geom_point(
+    aes(color = factor(control.id)),
+    position = position_jitter(h = 0, w = 1),
+    size = 3,
+    shape = 17
+  ) + 
+  ylab("Net_sessions/Battery_sessions") + labs(color = "Experiment Condition")
+
+
+dat_maps %>% 
+  ggplot(aes(x = drain_rate, y = outcome)) + 
+  geom_point(aes(color = control.id), position = position_jitter(h=0, w=1), size = 3, shape = 17) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "Experiment Condition")
+
+
+dat_maps %>% 
+  ggplot(aes(x = crash_rate_m1, y = outcome)) + 
+  geom_point(aes(color = control.id), position = position_jitter(h=0, w=1), size = 3, shape = 17) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "Experiment Condition")
+
+dat_maps %>% 
+  ggplot(aes(x = crash_rate_m2, y = outcome)) + 
+  geom_point(aes(color = control.id), position = position_jitter(h=0, w=1), size = 3, shape = 17) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "Experiment Condition")
+
+dat_maps %>% 
+  ggplot(aes(x = jank_rate, y = outcome)) + 
+  geom_point(aes(color = control.id), position = position_jitter(h=0, w=1), size = 3, shape = 17) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "Experiment Condition")
+
+dat_maps %>% 
+  ggplot(aes(x = control.id, y = outcome)) + 
+  geom_point(aes(color = drain_rate), position = position_jitter(h=0, w=1), size = 3, shape = 17) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "drain_rate")
+
+dat_maps %>% 
+  ggplot(aes(x = control.id, y = outcome)) + 
+  geom_point(aes(color = latency), position = position_jitter(h=0, w=1), size = 3, shape = 17) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "drain_rate")
+
+dat_maps %>% 
+  ggplot(aes(x = control.id, y = outcome)) + 
+  geom_point(aes(color = jank_rate), position = position_jitter(h=0, w=1), size = 3, shape = 17) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "drain_rate")
+
+# crash
+dat_maps %>% 
+  ggplot(aes(x = control.id, y = outcome)) + 
+  geom_point(aes(color = crash_rate_m1), position = position_jitter(h=0, w=1), size = 3, shape = 17) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "crash_rate_m1")
+
+dat_maps %>% 
+  ggplot(aes(x = control.id, y = outcome)) + 
+  geom_point(aes(color = crash_rate_m2), position = position_jitter(h=0, w=1), size = 3, shape = 17) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "crash_rate_m2")
+
+
+dat_maps %>% 
+  ggplot(aes(x = control.id, y = outcome)) + 
+  geom_point(aes(color = latency), position = position_jitter(h=0, w=1), size = 3, shape = 17) +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "Latency")
+```
+
+
+
+# All apps DAU
+## Exploration
+```{r}
+all_apps$control.id %>% unique()
+# search experiment 
+all_apps %>%
+  filter(experiment_app == "googlequicksearchbox_android" &
+         app_name == "Search") %>% repeted_ID()
+all_apps$control.id %>% unique()
+
+dat_search_all <- 
+  tibble(all_apps) %>%
+  filter(experiment_app == "googlequicksearchbox_android" &
+         app_name == "All") %>% 
+  filter(
+    metric %in% c(
+      "android_metrics::data_app_crash_sessions",
+      "android_metrics::data_app_native_crash_sessions",
+      "android_metrics::data_app_native_crash_sessions",
+      "android_metrics::system_app_native_crash_sessions",
+      "android_metrics::jank_rate",
+      "android_metrics::net_sessions",
+      "android_metrics::geometric_mean_screen_off_hours_per_battery",
+      "android_metrics::battery_sessions",
+      "search::agsa_first_draw_done_95th_latency",
+      "android_metrics::system_app_anr_sessions",
+      "android_metrics::data_app_anr_sessions",
+      "android_metrics::system_app_crash_sessions",
+      "androidmetrics::ew_drain_rate_screen_off_battery_level",
+      "search::cwsearch", "search::dauwsearchornow"
+    )
+  )  %>%
+  filter(!control.id %in% c(8540245, 8540245, 8555414, 8555414, 8581611, 8581611)) %>%
+  pivot_longer(
+    cols = value.control:value.experiment,
+    names_to = "ifExp",
+    values_to = "metric_value"
+  ) %>%
+  pivot_wider(
+    id_cols = c(control.id, ifExp),
+    names_from = metric,
+    values_from = c(metric_value)
+  ) %>%  rename(
+    search_pa_dau = `search::dauwsearchornow`,
+    dauwquert = `search::cwsearch`
+  )
+
+dat_search_all %>% 
+  ggplot(aes(x = factor(control.id), y = search_pa_dau)) + 
+  geom_point(aes(color = factor(ifExp)), position = position_jitter(h=.1, w=1), size = 3, shape = 17)  +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "Experiment Condition") + 
+  scale_x_discrete(name ="Experiment ID/Time", labels = NULL) +
+    theme(text = element_text(size=20),
+        axis.text.x = element_text(angle=90, hjust=1)) 
+```
+
+
+
+# Search DAU
+## Descriptive statistics
+```{r}
+data_search_dau <-
+  all_apps %>%
+  pivot_longer(
+    cols = value.control:value.experiment,
+    names_to = "ifExp",
+    values_to = "metric_value"
+  )   %>% # use two DAU metrics
+  mutate(app_name =
+           dplyr::recode(app_name, `All` = "Search")) %>%
+  pivot_wider(
+    id_cols = c(control.id, experiment.id, experiment_app, app_name, ifExp),
+    names_from = metric,
+    values_from = c(metric_value)
+  ) %>% unnest(
+    `android_metrics::battery_sessions`:`androidmetrics::ew_drain_rate_screen_off_battery_level`
+  ) %>%
+  mutate(crash_rate_m1 =  100 * ((
+    `android_metrics::data_app_crash_sessions` + `android_metrics::system_app_native_crash_sessions` +
+      `android_metrics::data_app_native_crash_sessions` + `android_metrics::system_app_crash_sessions`
+  ) / `android_metrics::net_sessions`
+  )) %>% mutate(crash_rate_m2 =  100 * ((
+    `android_metrics::data_app_crash_sessions` + `android_metrics::system_app_native_crash_sessions` +
+      `android_metrics::data_app_native_crash_sessions` + `android_metrics::system_app_crash_sessions`
+    + `android_metrics::system_app_anr_sessions` + `android_metrics::data_app_anr_sessions`
+  ) / `android_metrics::net_sessions`
+  )) %>% mutate(crash_rate_crash =  100 * ((
+    `android_metrics::data_app_crash_sessions` +
+      `android_metrics::system_app_crash_sessions`
+  ) / `android_metrics::net_sessions`
+  )) %>% mutate(crash_rate_native =  100 * ((
+    `android_metrics::system_app_native_crash_sessions` +
+      `android_metrics::data_app_native_crash_sessions`
+  ) / `android_metrics::net_sessions`
+  )) %>% mutate(crash_rate_anr =  100 * ((
+    `android_metrics::system_app_anr_sessions` + `android_metrics::data_app_anr_sessions`
+  ) / `android_metrics::net_sessions`
+  )) %>%  rename(
+    data_app_crash_sessions = `android_metrics::data_app_crash_sessions`,
+    data_app_native_crash_sessions = `android_metrics::data_app_native_crash_sessions`,
+    system_app_native_crash_sessions = `android_metrics::system_app_native_crash_sessions`,
+    jank_rate = `android_metrics::jank_rate`,
+    net_sessions = `android_metrics::net_sessions`,
+    geometric_mean_screen_off_hours_per_battery = `android_metrics::geometric_mean_screen_off_hours_per_battery`,
+    battery_sessions = `android_metrics::battery_sessions`,
+    latency = `search::agsa_first_draw_done_95th_latency`,
+    drain_rate = `androidmetrics::ew_drain_rate_screen_off_battery_level`
+  ) %>% mutate(outcome = net_sessions / battery_sessions) %>%  rename(search_pa_dau = `search::dauwsearchornow`,
+                                                                      dauwquert = `search::cwsearch`) %>%
+  mutate(outcome2 = search_pa_dau / battery_sessions,
+         outcome3 = dauwquert / battery_sessions)
+
+# search with DAU 
+data_search_dau %>%
+  drop_na(outcome2) %>%
+  filter(app_name == "Search") %>%
+  filter(experiment_app == "googlequicksearchbox_android") %>%
+  ggplot(aes(x = factor(control.id), y = outcome2)) +
+  geom_point(
+    aes(color = factor(ifExp)),
+    position = position_jitter(h = .1, w = 1),
+    size = 3,
+    shape = 17
+  )  +
+  ylab("Search_pa_dau/Battery_session") + labs(color = "Experiment Condition") +
+  scale_x_discrete(name = "Experiment ID/Time", labels = NULL) +
+  theme(text = element_text(size = 20),
+        axis.text.x = element_text(angle = 90, hjust = 1))
+
+data_search_dau %>%
+  drop_na(ifExp, outcome) %>%
+  filter(app_name == "Google Drive") %>%
+  felm(
+    outcome ~ factor(ifExp) + jank_rate,
+    weights = .$battery_sessions,
+    data = .
+  ) %>%
+  summary(robust = TRUE)
+data_search_dau$app_name %>% unique()
+
+data_search_dau %>%
+  filter(app_name == "Search") %>% filter(experiment_app %in% c("googlequicksearchbox_android")) %>%
+  felm(
+    outcome2 ~ factor(ifExp) + jank_rate,
+    weights = .$battery_sessions,
+    data = .
+  ) %>%
+  summary(robust = TRUE)
+anova(yt_fit_1, yt_fit_0)
+
+data_search_dau %>% skim()
+
+# check the results removing outliers
+data_search_dau %>%
+  filter(drain_rate > 500)  %>%
+  felm(
+    outcome ~ factor(ifExp) + crash_rate_m1 + jank_rate + latency + drain_rate |
+      factor(control.id),
+    weights = .$battery_sessions,
+    data = .
+  ) %>%
+  summary(robust = TRUE)
+
+
+data_search_dau %>%
+  filter(app_name == "YouTube") %>%
+  felm(
+    outcome ~ factor(ifExp) + crash_rate_m1 |
+      factor(control.id),
+    weights = .$battery_sessions,
+    data = .
+  ) %>%
+  summary(robust = TRUE)
+
+
+# crash
+data_search_dau %>%
+  filter(app_name == "Maps") %>%
+  felm(
+    outcome ~ factor(ifExp) + crash_rate_m2 |
+      factor(control.id),
+    weights = .$battery_sessions,
+    data = .
+  ) %>%
+  summary(robust = TRUE)
+
+data_search_dau %>%
+  filter(app_name == "Google Drive") %>% filter(experiment_app %in% c("drive_android")) %>%
+  felm(
+    outcome ~ factor(ifExp) + crash_rate_m2 |
+      factor(control.id),
+    weights = .$battery_sessions,
+    data = .
+  ) %>%
+  summary(robust = TRUE)
+
+# Search
+dat_agsa_new <- data_search_dau %>%
+  filter(app_name == "Search") %>% filter(experiment_app %in% c("googlequicksearchbox_android"))
+
+dat_agsa_new %>% select(control.id, outcome, ifExp, jank_rate, battery_sessions) %>% lm(outcome ~ factor(ifExp) + jank_rate + factor(control.id), data = .) %>% summary()
+
+dat_agsa_new %>% select(
+  control.id,
+  outcome2,
+  drain_rate,
+  latency,
+  outcome,
+  outcome3,
+  ifExp,
+  jank_rate,
+  battery_sessions
+) %>%
+  plm(
+    outcome ~ factor(ifExp),
+    data = .,
+    model = "within",
+    index = "control.id",
+    weights = battery_sessions
+  ) %>%
+  summary()
+
+# search
+felm(
+  outcome ~ factor(ifExp) + jank_rate  |
+    factor(control.id),
+  weights = dat_agsa_new$battery_sessions,
+  data = dat_agsa_new
+) %>%
+  summary(robust = TRUE)
+
+
+plm(
+  outcome ~ factor(ifExp) * jank_rate,
+  data = dat_agsa_new %>% drop_na(),
+  model = "within",
+  index = "control.id",
+  weights = battery_sessions
+) %>%
+  summary()
+
+felm(
+  outcome2 ~ factor(ifExp) + jank_rate  |
+    factor(control.id),
+  weights = dat_agsa_new$battery_sessions,
+  data = dat_agsa_new
+) %>%
+  summary(robust = TRUE)
+
+plm(
+  net_sessions ~ factor(ifExp),
+  data = dat_agsa_new,
+  model = "within",
+  index = "control.id",
+  weights = battery_sessions
+) %>%
+  summary()
+
+data_search_dau %>%
+  filter(app_name == "Search") %>% filter(experiment_app %in% c("googlequicksearchbox_android")) %>%
+  plm(
+    outcome ~ drain_rate + factor(ifExp),
+    data = .,
+    model = "within",
+    index = "control.id",
+    weights = .$battery_sessions
+  ) %>%
+  summary()
+
+# if in the treatment arm
+data_search_dau %>%
+  filter(app_name == "Search") %>% filter(experiment_app %in% c("search_android")) %>%
+  plm(
+    outcome ~ factor(ifExp),
+    data = data_search_dau,
+    model = "within",
+    index = "control.id",
+    weights = battery_sessions
+  ) %>%
+  summary()
+
+
+data_all %>%
+  ggplot(aes(x = factor(control.id), y = outcome)) +
+  geom_point(aes(color = factor(app_name)))  +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "Experiment Condition") +
+  scale_x_discrete(name = "Experiment ID/Time", labels = NULL)
+```
+## Exploration
+```{r}
+# search experiment
+all_apps %>%
+  filter(experiment_app == "googlequicksearchbox_android" &
+           app_name == "Search") %>% repeted_ID()
+all_apps$control.id %>% unique()
+
+dat_search_
+dat_search_all <-
+  tibble(all_apps) %>%
+  filter(experiment_app == "googlequicksearchbox_android" &
+           app_name == "All") %>%
+  filter(
+    metric %in% c(
+      "android_metrics::data_app_crash_sessions",
+      "android_metrics::data_app_native_crash_sessions",
+      "android_metrics::data_app_native_crash_sessions",
+      "android_metrics::system_app_native_crash_sessions",
+      "android_metrics::jank_rate",
+      "android_metrics::net_sessions",
+      "android_metrics::geometric_mean_screen_off_hours_per_battery",
+      "android_metrics::battery_sessions",
+      "search::agsa_first_draw_done_95th_latency",
+      "android_metrics::system_app_anr_sessions",
+      "android_metrics::data_app_anr_sessions",
+      "android_metrics::system_app_crash_sessions",
+      "androidmetrics::ew_drain_rate_screen_off_battery_level",
+      "search::cwsearch",
+      "search::dauwsearchornow"
+    )
+  )  %>%
+  filter(!control.id %in% c(8540245, 8540245, 8555414, 8555414, 8581611, 8581611)) %>%
+  pivot_longer(
+    cols = value.control:value.experiment,
+    names_to = "ifExp",
+    values_to = "metric_value"
+  ) %>%
+  pivot_wider(
+    id_cols = c(control.id, ifExp),
+    names_from = metric,
+    values_from = c(metric_value)
+  ) %>%  rename(search_pa_dau = `search::dauwsearchornow`,
+                dauwquert = `search::cwsearch`)
+
+dat_search_all %>%
+  ggplot(aes(x = factor(control.id), y = search_pa_dau)) +
+  geom_point(
+    aes(color = factor(ifExp)),
+    position = position_jitter(h = .1, w = 1),
+    size = 3,
+    shape = 17
+  )  +
+  ylab("Net_sessions/Battery_sessions") + labs(color = "Experiment Condition") +
+  scale_x_discrete(name = "Experiment ID/Time", labels = NULL)
+
+# check instrument strength
+data_youtube <- data_search_dau %>%
+  filter(app_name == "YouTube")
+yt_fit_1 <- lm(jank_rate ~ factor(control.id), data = data_youtube)
+yt_fit_0 <- lm(jank_rate ~ 1, data = data_youtube)
+
+data_youtube <- data_search_dau %>%
+  filter(app_name == "Search") %>%
+  filter(experiment_app == "maps_navigation_android")
+
+yt_fit_1 <-
+  lm(outcome ~ factor(control.id),
+     data = data_youtube,
+     weights = battery_sessions)
+yt_fit_0 <-
+  lm(outcome ~ 1, data = data_youtube, weights = battery_sessions)
+anova(yt_fit_0, yt_fit_1)
+
+# check with sagan test although not well defined for our case
+fm <-
+  AER::ivreg(outcome ~ jank_rate |
+               factor(control.id) + factor(ifExp) , data = data_youtube)
+summary(fm, vcov = sandwich, diagnostics = TRUE)
+
+
+data_search_dau %>%
+  filter(app_name == "Search") %>% filter(experiment_app %in% c("googlequicksearchbox_android")) %>%
+  felm(
+    outcome2 ~ factor(ifExp) + jank_rate,
+    weights = .$battery_sessions,
+    data = .
+  ) %>%
+  summary(robust = TRUE)
+```
+

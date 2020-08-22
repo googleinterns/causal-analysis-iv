@@ -1,0 +1,214 @@
+---
+title: "Simulation for the n/k issue"
+author: "Feng Ji"
+date: "6/23/2020"
+output:
+  word_document: default
+  html_document: default
+---
+# to compare the performance of the debiased estimator under different n and K
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(MASS)
+# to simulate from scalted-t distribution, can be viewed as a infinite mixture of normal
+library(metRology) 
+```
+
+# place holder for the model formulation 
+
+# data generating model
+
+# helper functions
+```{r}
+sim_nK <- function(n = 100, K = 1000, n_sim = 30){
+j = 1
+# beta estimates after CV
+beta_final_full <- matrix(NA, nrow = n_sim, ncol = 2)
+# beta estimates on the other half of data
+beta_2sls <- matrix(NA, nrow = n_sim, ncol = 2)
+
+for (j in 1:n_sim){
+
+# ivcv vector format ---- replicating the experiment on page 5 - 2-dimension X
+# I use the true variance in the control group instead of the estimated one, should be similar
+#n = c(100, 1000, 5000, 10000, 50000)
+#K = c(30, 100, 500, 1000)
+#crossing(n, K)
+error <-
+  mvrnorm(n*K, c(0, 0, 0), matrix(c(1, .5, .5, .5, 1, .5, .5, .5, 1), 3, 3))
+
+#experiment id
+z_id <- rep(1:K, each = n)
+
+# scaled T with sd = .4
+z1_mean <- rt.scaled(n = K,
+                     df = 3,
+                     mean = 0,
+                     sd = .4)
+z1 <- rep(z1_mean, each = n)
+z2_mean <- rt.scaled(n = K,
+                     df = 3,
+                     mean = 0,
+                     sd = .4)
+z2 <- rep(z2_mean, each = n)
+
+# correlated error
+v <- error[, c(1)]
+u1 <- error[, c(2)]
+u2 <- error[, c(3)]
+
+# simulating the first stage
+x1 =  z1 + u1
+x2 =  z2 + u2
+
+# population model: beta  = c(.5, .2)
+y = true_par[1] * x1 + true_par[2] * x2 + 10*v
+dat <- data.frame(x1, x2, y, z1, z2, z_factor = as.factor(z_id))
+
+# 2sls: second stage ols with experimental level statistics
+dat_mean <-
+  dat %>% group_by(z_factor) %>% summarise(mean_x1 = mean(x1),
+                                           mean_x2 = mean(x2),
+                                           mean_y = mean(y))
+
+# data for ivcv
+dat_cv <-
+  dat %>% add_column(cv_id = 
+                       rep(rep(c(1, 2), each = n / 2), K)) %>%
+  group_by(z_factor, cv_id) %>% 
+  summarize(mean_x1 = mean(x1),           
+            mean_x2 = mean(x2),
+            mean_y = mean(y)) %>%
+  pivot_wider(names_from = cv_id,
+              values_from = c(mean_x1, mean_x2, mean_y))
+
+# tune the threshold parameter q
+i = 1
+n_q <- 1000
+q <- plogis(seq(-50, 0, length.out = n_q))
+mse <- vector()
+
+for (i in 1:n_q) {
+  mean_x1_1_g = ifelse(((1 - pnorm(
+    abs(dat_cv$mean_x1_1), sd = sqrt(2 / (n))
+  )) < q[i]) |
+    ((1 - pnorm(
+      abs(dat_cv$mean_x2_1), sd = sqrt(2 / (n))
+    )) < q[i]),  dat_cv$mean_x1_1, 0)
+  mean_x2_1_g = ifelse(((1 - pnorm(
+    abs(dat_cv$mean_x1_1), sd = sqrt(2 / (n))
+  )) < q[i]) |
+    ((1 - pnorm(
+      abs(dat_cv$mean_x2_1), sd = sqrt(2 / (n))
+    )) < q[i]),  dat_cv$mean_x2_1, 0)
+  
+  mean_x1_2_g = ifelse(((1 - pnorm(
+    abs(dat_cv$mean_x1_2), sd = sqrt(2 / (n))
+  )) < q[i]) |
+    ((1 - pnorm(
+      abs(dat_cv$mean_x2_2), sd = sqrt(2 / (n))
+    )) < q[i]),  dat_cv$mean_x1_2, 0)
+  mean_x2_2_g = ifelse(((1 - pnorm(
+    abs(dat_cv$mean_x1_2), sd = sqrt(2 / (n))
+  )) < q[i]) |
+    ((1 - pnorm(
+      abs(dat_cv$mean_x2_2), sd = sqrt(2 / (n))
+    )) < q[i]),  dat_cv$mean_x2_2, 0)
+  
+  fit <- lm(dat_cv$mean_y_1 ~ mean_x1_1_g + mean_x2_1_g)
+  mean_y_hat <-
+    predict(fit,
+            newdata = data.frame(
+              mean_x1_1_g = dat_cv$mean_x1_1,
+              mean_x2_1_g = dat_cv$mean_x2_1
+            ))
+  mean_y_hat1 <-
+    predict(fit,
+            newdata = data.frame(
+              mean_x1_1_g = dat_cv$mean_x1_2,
+              mean_x2_1_g = dat_cv$mean_x2_2
+            ))
+mse[i] <- mean((dat_cv$mean_y_2 - mean_y_hat) ^ 2)
+}
+mean_x1_g = ifelse(((1 - pnorm(
+  abs(dat_mean$mean_x1), sd = sqrt(2 / (n))
+)) < q[which.min(q)]) |
+  ((1 - pnorm(
+    abs(dat_mean$mean_x2), sd = sqrt(2 / (n))
+  )) < q[which.min(q)]),  dat_mean$mean_x1, 0)
+mean_x2_g = ifelse(((1 - pnorm(
+  abs(dat_mean$mean_x1), sd = sqrt(2 / (n))
+)) < q[which.min(q)]) |
+  ((1 - pnorm(
+    abs(dat_mean$mean_x2), sd = sqrt(2 / (n))
+  )) < q[which.min(q)]),  dat_mean$mean_x2, 0)
+beta_final_full[j, ] <- lm(dat_mean$mean_y ~ mean_x1_g + mean_x2_g)$coefficients[c(2, 3)]
+beta_2sls[j, ] <- lm(mean_y ~ mean_x1 + mean_x2, dat_mean)$coefficients[c(2, 3)]
+print(q[which.min(mse)])
+}
+
+# debiased mse
+beta_final_full_mse <- (beta_final_full - true_par)^2 %>% sum()
+# bias
+beta_final_full_bias <- (beta_final_full - true_par) %>% sum()
+
+# 2sls mse
+beta_2sls_mse <- (beta_2sls - true_par)^2 %>% sum()
+# bias
+beta_2sls_bias <- (beta_2sls - true_par) %>% sum()
+
+return(c(beta_final_full_mse, beta_final_full_bias, beta_2sls_mse, beta_2sls_bias))
+}
+```
+
+# simulation
+```{r}
+true_par <-  c(.5, .2)
+
+# setup
+n <- c(200, 1000, 10000, 50000)
+K <- c(30, 100, 1000)
+sim_res <- crossing(n, K) %>% 
+  mutate(res = map2(n, K, ~sim_nK(n = .x, K = .y, n_sim = 10)))
+
+# rename
+sim_res_plot <- 
+  sim_res %>%
+  unnest_wider(res) %>%
+  rename_at(vars(starts_with("...")),
+            ~ c("mse_ivcv_2sls", "bias_ivcv_2sls", "mse_2sls", "bias_2sls"))
+
+# mse
+sim_res_plot %>% 
+  pivot_longer(cols = c(mse_ivcv_2sls, mse_2sls),
+               names_to = "type",
+               values_to = "mse") %>% 
+  ggplot(aes(x =  type, y = mse)) +
+    geom_point() +
+    facet_grid(n ~ K, labeller = labeller(n = c(`200` = "n = 200",
+                                                `1000` = "n = 1000",
+                                                `10000` = "n = 10000",
+                                                `50000` = "n = 50000"),
+                                          K = c(`30` = "K = 30",
+                                                `100` = "K = 100",
+                                                `1000` = "K = 1000"))) + 
+  theme_set(theme_gray(base_size = 30))
+
+# bias
+sim_res_plot %>% 
+  pivot_longer(cols = c(bias_ivcv_2sls, bias_2sls),
+               names_to = "type",
+               values_to = "bias") %>% 
+  ggplot(aes(x =  type, y = bias)) +
+    geom_point() +
+    facet_grid(n ~ K, labeller = labeller(n = c(`200` = "n = 200",
+                                                `1000` = "n = 1000",
+                                                `10000` = "n = 10000",
+                                                `50000` = "n = 50000"),
+                                          K = c(`30` = "K = 30",
+                                                `100` = "K = 100",
+                                                `1000` = "K = 1000"))) + 
+  theme_set(theme_gray(base_size = 24))
+```
+
