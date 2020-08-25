@@ -1,0 +1,212 @@
+---
+title: "gIVCV"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{gIVCV}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center",
+  comment = "#>"
+)
+```
+
+```{r setup}
+library(MASS)
+library(tidyverse)
+library(Formula)
+library(magrittr)
+library(sjPlot)
+library(gIVCV)
+library(knitr)
+select <- dplyr::select
+```
+
+# IVCV with raw data
+```{r}
+# true effect: .1 .2 .3
+I = 100
+J = 500
+
+dat_raw <- sim_IV(I = I, # experiment size
+              J = J, # number of experiment
+              beta_X = c(.1, .2, .3), # effects
+              ctrl_id = 1) # the indicator of treatment group
+
+
+head(dat_raw) %>% kable()
+
+# TSLS
+fit_raw_tsls <- IVCV(y ~ x1 + x2 + x3 | factor(id),
+     id = id,
+     data = dat_raw,
+     L0 = F)$fit
+
+# IVCV
+fit_raw_ivcv <- IVCV(y ~ x1 + x2 + x3 | factor(id),
+     id = id,
+     ctrl_id = 1,
+     data = dat_raw,
+     L0 = T)$fit
+
+tab_model(
+  fit_raw_tsls,
+  fit_raw_ivcv,
+  show.ci = FALSE,
+  show.se = TRUE,
+  auto.label = FALSE,
+  string.se = "SE",
+  show.icc = TRUE,
+  show.r2 = FALSE,
+  show.aic = FALSE,
+  show.obs = T,
+  title = "True effect is .1, .2, .3, respectively for x1, x2, x3",
+  dv.labels = c("TSLS with raw data",
+                "IVCV with raw data"),
+  digits = 5
+)
+
+```
+
+# IVCV with summary
+```{r}
+# true effect: .1 .2 .3
+I = 100
+J = 500
+dat_smy <- sim_IV(I = I,
+               J = J,
+               beta_X = c(.1, .2, .3),
+               ctrl_id = 1)
+ctrl_sd_x <-
+  dat_smy %>% filter(id == 1) %>%
+  select(starts_with("x")) %>%
+  var() %>%
+  diag() %>%
+  sqrt()/sqrt(I) %>%
+  as.double()
+
+ctrl_sd_y <-
+  dat_smy %>% filter(id == 1) %>%
+  select(starts_with("y")) %>%
+  var() %>%
+  diag() %>%
+  sqrt()/sqrt(I) %>%
+  as.double()
+
+
+data_mean <-
+  dat_smy %>%
+  group_by(id) %>%
+  summarise_all(mean)
+sim_gIV() %>% head %>% kable()
+fit_smy_tsls <- sIVCV(formula = y ~ x1 + x2 + x3 | factor(id),
+                 id = id,
+                 ctrl_id = 1,
+                 data = data_mean,
+                 L0 = F)$fit
+
+theta <- t(c(1, 1))
+fit_smy_ivcv <- sIVCV(formula = y ~ x1 + x2 + x3 | factor(id),
+                 id = id,
+                 ctrl_id = 1,
+                 data = data_mean,
+                 ctrl_sd_x = ctrl_sd_x,
+                 ctrl_sd_y = ctrl_sd_y,
+                 L0 = T)$fit
+tab_model(
+  fit_smy_tsls,
+  fit_smy_ivcv,
+  show.ci = FALSE,
+  show.se = TRUE,
+  auto.label = FALSE,
+  string.se = "SE",
+  show.icc = TRUE,
+  show.r2 = FALSE,
+  show.aic = FALSE,
+  show.obs = T,
+  title = "True effect is .1, .2, .3, respectively for x1, x2, x3",
+  dv.labels = c("TSLS with summary data",
+                "IVCV with summary data"),
+  digits = 5
+)
+```
+
+# gIVCV for summary data
+```{r}
+# true effect is .1, .2, .3
+J = 500
+I = 100
+data_gIVCVs <- sim_gIV(beta_ctrl = .3,
+                       beta_X = c(.1, .2, .3),
+                       J = J,
+                       I = I,
+                       summary_data = F)
+data_gIVCVs_sd <-
+  data_gIVCVs %>%
+  add_column(var_id = list((1:3))) %>%
+        unchop(c(var_id, X)) %>%
+  pivot_wider(names_from = var_id, values_from = X, names_glue = "{.value}{var_id}") %>%
+  filter(ctrl_id == 0) %>%
+  group_by(id) %>%
+  summarise(ctrl_sd_x1 = sd(X1)/sqrt(I),
+            ctrl_sd_x2 = sd(X2)/sqrt(I),
+            ctrl_sd_x3 = sd(X3)/sqrt(I),
+            ctrl_sd_y = sd(Y)/sqrt(I))
+
+data_gIVCVs <- sim_gIV(beta_ctrl = .3,
+                       beta_X = c(.1, .2, .3),
+                       J = J,
+                       I = I,
+                       summary_data = T)
+# generalized IVCV with L0
+fit_ivcv_g <-
+  gIVCVs(y ~ x1 + x2 + x3,
+      id = id,
+      ctrl_id = ctrl_id,
+      ctrl_sd_x = as.matrix(data_gIVCVs_sd[, 2:4]),
+      ctrl_sd_y = data_gIVCVs_sd$ctrl_sd_y,
+      L0 = T,
+      data = data_gIVCVs)$fit
+
+# generalized IVCV without L0
+fit_tsls_g <-
+  gIVCVs(y ~ x1 + x2 + x3,
+      id = id,
+      ctrl_id = ctrl_id,
+      L0 = F,
+      data = data_gIVCVs)
+fit_tsls_g
+
+
+tab_model(
+  fit_ivcv_g,
+  fit_tsls_g,
+  show.ci = FALSE,
+  show.se = TRUE,
+  auto.label = FALSE,
+  string.se = "SE",
+  show.icc = TRUE,
+  show.r2 = FALSE,
+  show.aic = FALSE,
+   show.obs = TRUE,
+   title = "True effect is .1, .2, .3, .3, respectively for x1, x2, x3, ctrl_id",
+  dv.labels = c("gIVCV with summary data",
+                "TSLS with summary data"),
+  digits = 5
+)
+
+```
+
+
+# Model demo
+```{r}
+#demo_RE()
+#demo_RE_FE()
+```
+
